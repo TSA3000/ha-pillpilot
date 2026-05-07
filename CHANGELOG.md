@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.2] — 2026-05-07
+
+- Fix: Add medicine in the panel no longer fails with "Couldn't reach Home Assistant" — pass the required `unique_id=None` to `ConfigSubentry`.
+
 ## [0.1.1] — 2026-05-07
 
 - Fix: editing a medicine no longer fails with "This medicine no longer exists". Medicine identity is now the subentry id.

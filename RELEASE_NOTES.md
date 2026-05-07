@@ -1,3 +1,9 @@
+# v0.1.2
+
+## Fixes
+
+- **Add medicine in the panel no longer fails with "Couldn't reach Home Assistant"**. The `ConfigSubentry` constructor in current Home Assistant versions requires `unique_id` (no default), even when the value is `None`; v0.1.1 dropped that argument as part of the canonical-id cleanup.
+
 # v0.1.1
 
 Bug fixes for the in-panel Add and Edit modals.

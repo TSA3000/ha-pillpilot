@@ -613,11 +613,15 @@ async def _ws_create_medicine(
     # construction; that is the canonical medicine_id and is what the
     # rest of the integration looks up by. CONF_MED_ID is not stored in
     # data — _medicines_from_subentries injects it from sub.subentry_id.
+    # ``unique_id`` is required by the ConfigSubentry dataclass (no
+    # default), but None is a valid value — the subentry_id alone
+    # identifies this medicine.
     title = build_subentry_title(hass, med)
     new_sub = ConfigSubentry(
         data=med,
         subentry_type=SUBENTRY_TYPE_MEDICINE,
         title=title,
+        unique_id=None,
     )
     try:
         hass.config_entries.async_add_subentry(target_entry, new_sub)
