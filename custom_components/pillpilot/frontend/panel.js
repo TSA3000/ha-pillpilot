@@ -578,10 +578,16 @@ const STYLES = `
   }
   .modal-footer {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
     gap: 8px;
     padding: 12px 20px;
     border-top: 1px solid var(--divider-color, rgba(0,0,0,0.12));
+  }
+  .modal-footer-right {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
   }
   .modal-btn {
     font-family: inherit;
@@ -609,6 +615,15 @@ const STYLES = `
   }
   .modal-btn-primary:hover:not(:disabled) {
     filter: brightness(0.92);
+  }
+  .modal-btn-danger {
+    background: transparent;
+    border-color: var(--error-color, #f44336);
+    color: var(--error-color, #f44336);
+  }
+  .modal-btn-danger:hover:not(:disabled) {
+    background: var(--error-color, #f44336);
+    color: var(--text-primary-color, #fff);
   }
   .modal-error-banner {
     margin: 12px 20px 0;
@@ -2064,6 +2079,49 @@ class PillPilotPanel extends HTMLElement {
     }
   }
 
+  // Delete the medicine currently open in the Edit modal. Confirms with
+  // the user first because deletion is destructive — removes the
+  // subentry, the sensor entity, and any per-medicine device. Dose
+  // history (stored separately under the medicine_id key) becomes
+  // orphaned but is harmless; the medicine no longer surfaces in the
+  // panel or in HA Settings.
+  async _deleteMedicine() {
+    if (!this._editingMedicineId || this._editFormSaving) return;
+    if (!this._hass) return;
+    const medName =
+      (this._editFormDraft && this._editFormDraft.drug && this._editFormDraft.drug.name) ||
+      "this medicine";
+    if (
+      !window.confirm(
+        `Delete "${medName}"? This removes the medicine and its sensor. ` +
+        `Dose history is not removed but will no longer be visible.`
+      )
+    ) {
+      return;
+    }
+    this._editFormSaving = true;
+    this._editFormErrors = {};
+    this._render();
+    try {
+      const result = await this._hass.callWS({
+        type: "pillpilot/delete_medicine",
+        medicine_id: this._editingMedicineId,
+      });
+      if (result && result.success) {
+        this._closeEditModal();
+      } else {
+        this._editFormErrors = (result && result.errors) || { base: "unknown" };
+        this._editFormSaving = false;
+        this._render();
+      }
+    } catch (err) {
+      console.error("[PillPilot] delete_medicine WS call failed:", err);
+      this._editFormErrors = { base: "ws_error" };
+      this._editFormSaving = false;
+      this._render();
+    }
+  }
+
   // --- render ------------------------------------------------------------
 
   _render() {
@@ -2178,6 +2236,8 @@ class PillPilotPanel extends HTMLElement {
       saveAction: "save-edit",
       saveLabel: saving ? "Saving…" : "Save",
       saving,
+      // Delete is Edit-only — there's nothing to delete in the Add flow.
+      showDelete: true,
       body: this._renderMainModalBody(draft, errors),
     });
   }
@@ -2193,6 +2253,7 @@ class PillPilotPanel extends HTMLElement {
       saveAction: "save-add",
       saveLabel: saving ? "Adding…" : "Add medicine",
       saving,
+      showDelete: false,
       body: this._renderMainModalBody(draft, errors),
     });
   }
@@ -2200,11 +2261,16 @@ class PillPilotPanel extends HTMLElement {
   // Common chrome: overlay + card + header + body + footer. Used by
   // both Edit and Add modals; also used by the prescription sub-modal
   // (with different actions) so the structure stays consistent.
-  _renderMainModalShell({ title, closeAction, saveAction, saveLabel, saving, body }) {
+  // showDelete adds a danger-styled "Delete medicine" button on the
+  // left of the footer; right-aligned Cancel/Save stay grouped.
+  _renderMainModalShell({ title, closeAction, saveAction, saveLabel, saving, showDelete, body }) {
     const errors = this._editFormErrors || {};
     const errMsg = (key) => this._editErrorText(key);
     const baseError = errors && errors.base
       ? `<div class="modal-error-banner">${escapeHtml(errMsg(errors.base))}</div>`
+      : "";
+    const deleteBtn = showDelete
+      ? `<button class="modal-btn modal-btn-danger" data-action="delete-edit" ${saving ? "disabled" : ""}>Delete medicine</button>`
       : "";
     return `
       <div class="modal-overlay" data-action="${closeAction}">
@@ -2218,8 +2284,11 @@ class PillPilotPanel extends HTMLElement {
             ${body}
           </div>
           <footer class="modal-footer">
-            <button class="modal-btn modal-btn-secondary" data-action="${closeAction}" ${saving ? "disabled" : ""}>Cancel</button>
-            <button class="modal-btn modal-btn-primary" data-action="${saveAction}" ${saving ? "disabled" : ""}>${escapeHtml(saveLabel)}</button>
+            ${deleteBtn}
+            <div class="modal-footer-right">
+              <button class="modal-btn modal-btn-secondary" data-action="${closeAction}" ${saving ? "disabled" : ""}>Cancel</button>
+              <button class="modal-btn modal-btn-primary" data-action="${saveAction}" ${saving ? "disabled" : ""}>${escapeHtml(saveLabel)}</button>
+            </div>
           </footer>
         </div>
       </div>
@@ -2618,6 +2687,12 @@ class PillPilotPanel extends HTMLElement {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         this._saveAdd();
+      });
+    });
+    root.querySelectorAll('[data-action="delete-edit"]').forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        this._deleteMedicine();
       });
     });
 

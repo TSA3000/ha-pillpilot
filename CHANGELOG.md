@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.3] — 2026-05-07
+
+- New: Delete button in the Edit medicine modal — remove a medicine without leaving the panel.
+
 ## [0.1.2] — 2026-05-07
 
 - Fix: Add medicine in the panel no longer fails with "Couldn't reach Home Assistant" — pass the required `unique_id=None` to `ConfigSubentry`.

@@ -650,6 +650,77 @@ async def _ws_create_medicine(
 
 
 # ---------------------------------------------------------------------------
+# pillpilot/delete_medicine — remove a medicine subentry from the panel
+# ---------------------------------------------------------------------------
+#
+# Mirrors the "Delete" button on HA Settings → Integrations → PillPilot
+# but lives in the panel's Edit modal so users don't have to leave the
+# panel to remove a medicine. Cascade-removal of the medicine's sensor
+# entity and any per-medicine devices is handled automatically by HA
+# because the entity is registered with config_subentry_id.
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "pillpilot/delete_medicine",
+        vol.Required("medicine_id"): cv.string,
+    }
+)
+@websocket_api.async_response
+async def _ws_delete_medicine(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict,
+) -> None:
+    """Remove a medicine subentry by id."""
+    medicine_id: str = msg["medicine_id"]
+
+    target_entry: ConfigEntry | None = None
+    target_subentry: ConfigSubentry | None = None
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        sub = entry.subentries.get(medicine_id)
+        if sub is not None and sub.subentry_type == SUBENTRY_TYPE_MEDICINE:
+            target_entry = entry
+            target_subentry = sub
+            break
+
+    if target_entry is None or target_subentry is None:
+        connection.send_result(
+            msg["id"],
+            {"success": False, "errors": {"base": "medicine_not_found"}},
+        )
+        return
+
+    try:
+        # Mirror async_add_subentry: pass the entry + subentry object.
+        # HA cascades the removal to the entity (registered with
+        # config_subentry_id) and any device that has no other
+        # subentries pointing at it.
+        await hass.config_entries.async_remove_subentry(
+            target_entry, target_subentry
+        )
+    except Exception:  # noqa: BLE001
+        _LOGGER.exception("Delete medicine failed for %s", medicine_id)
+        connection.send_result(
+            msg["id"],
+            {"success": False, "errors": {"base": "delete_failed"}},
+        )
+        return
+
+    # Refresh coordinator so the deleted med disappears from sensors and
+    # the panel without waiting for the next tick. Same pattern as create
+    # / update — entry-update listener also fires but the explicit refresh
+    # narrows the visible delay.
+    bucket = hass.data[DOMAIN].get(target_entry.entry_id)
+    if bucket and bucket.get("coordinator"):
+        coord: MedicineCoordinator = bucket["coordinator"]
+        coord.update_medicines(_medicines_from_subentries(target_entry))
+        await coord.async_request_refresh()
+
+    connection.send_result(msg["id"], {"success": True})
+
+
+# ---------------------------------------------------------------------------
 # pillpilot/get_medicines_db — read-only catalog access for the panel modal
 # ---------------------------------------------------------------------------
 #
@@ -711,5 +782,6 @@ def _register_websocket_commands(hass: HomeAssistant) -> None:
         return
     websocket_api.async_register_command(hass, _ws_update_medicine)
     websocket_api.async_register_command(hass, _ws_create_medicine)
+    websocket_api.async_register_command(hass, _ws_delete_medicine)
     websocket_api.async_register_command(hass, _ws_get_medicines_db)
     domain_data["ws_commands_registered"] = True

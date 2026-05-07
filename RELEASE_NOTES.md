@@ -1,3 +1,11 @@
+# v0.1.3
+
+Adds an in-panel Delete button to the Edit medicine modal, so removing a medicine no longer requires going to HA Settings → Integrations → PillPilot.
+
+## New
+
+- **Delete medicine** button in the Edit modal footer (left side, danger-styled). Confirms before deleting. Removes the subentry, the sensor entity, and any per-medicine device.
+
 # v0.1.2
 
 ## Fixes
