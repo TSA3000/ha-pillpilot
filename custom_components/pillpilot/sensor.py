@@ -1,6 +1,7 @@
 """Sensor platform: one entity per medicine."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any
 
@@ -14,6 +15,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import MedicineCoordinator, MedicineState
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -40,19 +43,24 @@ async def async_setup_entry(
         to_remove = known_ids - current_ids
 
         if to_add:
-            # Group adds by the subentry that owns them so HA links the
-            # entity to the right subentry for delete-cascading.
+            # Every medicine's id IS the subentry_id (see
+            # _medicines_from_subentries in __init__.py), so the link
+            # is direct. config_subentry_id ties the entity to the
+            # subentry so HA cleans up the entity automatically when
+            # the subentry is deleted.
             subentry_ids = set(entry.subentries.keys())
             for med_id in to_add:
-                if med_id in subentry_ids:
-                    async_add_entities(
-                        [MedicineSensor(coordinator, med_id)],
-                        config_subentry_id=med_id,
+                if med_id not in subentry_ids:
+                    _LOGGER.error(
+                        "PillPilot: coordinator emitted med_id %s with no "
+                        "matching subentry — skipping entity creation",
+                        med_id,
                     )
-                else:
-                    # Legacy v0.1.x medicine that hasn't been migrated yet
-                    # (shouldn't happen, but be defensive)
-                    async_add_entities([MedicineSensor(coordinator, med_id)])
+                    continue
+                async_add_entities(
+                    [MedicineSensor(coordinator, med_id)],
+                    config_subentry_id=med_id,
+                )
             known_ids.update(to_add)
 
         if to_remove:

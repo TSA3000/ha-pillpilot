@@ -920,6 +920,15 @@ class PillPilotPanel extends HTMLElement {
       this._editFormErrors = {};
       this._editFormSaving = false;
       this._personSubModal = null;
+      // Cached medicines catalog from pillpilot/get_medicines_db. Used
+      // by the Add/Edit modal's drug-name autocomplete and post-pick
+      // auto-fill. Fetched lazily on the first hass set; null while in
+      // flight, [] if the WS call ever resolves with an empty catalog
+      // (e.g. integration not fully booted) or fails outright. Either
+      // way the modal still works — it just falls back to suggesting
+      // names from medicines you've already added.
+      this._medicinesDb = null;
+      this._medicinesDbFetchInFlight = false;
       this._onVisibilityChange = () => {
         if (!document.hidden) {
           console.log("[PillPilot] visibilitychange → re-render");
@@ -1140,6 +1149,10 @@ class PillPilotPanel extends HTMLElement {
 
   set hass(value) {
     this._hass = value;
+    // Fire-and-forget catalog fetch the first time we see hass. The
+    // panel renders fine without it (datalist falls back to empty);
+    // when it lands, the next render picks it up.
+    this._ensureMedicinesDb();
     // Don't re-render while any modal is open. A re-render would
     // replace innerHTML, blowing away the form inputs the user is
     // filling out. Modals are dismissed on save/cancel, at which point
@@ -1206,6 +1219,127 @@ class PillPilotPanel extends HTMLElement {
         s.attributes &&
         s.attributes.medicine_id !== undefined
     );
+  }
+
+  // --- medicines DB cache (drug-name autocomplete) ----------------------
+  //
+  // Populated lazily by a single websocket call to
+  // ``pillpilot/get_medicines_db``. The catalog is small (~250 entries)
+  // and rarely changes, so a one-shot fetch + cache for the lifetime
+  // of this panel instance is plenty. If the user runs the
+  // ``pillpilot.refresh_medicines_database`` service, they'll see the
+  // new entries on next browser reload — acceptable trade-off versus
+  // a polling refresh.
+
+  _ensureMedicinesDb() {
+    if (this._medicinesDb !== null) return;
+    if (this._medicinesDbFetchInFlight) return;
+    if (!this._hass || typeof this._hass.callWS !== "function") return;
+    this._medicinesDbFetchInFlight = true;
+    this._hass
+      .callWS({ type: "pillpilot/get_medicines_db" })
+      .then((res) => {
+        this._medicinesDb =
+          (res && Array.isArray(res.medicines)) ? res.medicines : [];
+        this._medicinesDbFetchInFlight = false;
+        // No re-render trigger needed: the next set hass tick (which
+        // comes seconds later at most via the coordinator) will pick
+        // up the new value when the modal opens. If a modal IS already
+        // open, the user can close+reopen to get autocomplete.
+      })
+      .catch((err) => {
+        console.warn("[PillPilot] get_medicines_db failed:", err);
+        this._medicinesDb = [];
+        this._medicinesDbFetchInFlight = false;
+      });
+  }
+
+  // Build the <option> rows for the drug-name datalist. Brand names
+  // come first; aliases come second with a label hint pointing back to
+  // the brand; existing-sensor names come last (in case the user has a
+  // custom medicine not in the catalog). Brand-name match always wins
+  // over a colliding alias — see _lookupMedNameOrAlias for the
+  // matching counterpart.
+  _buildNameOptions(existingSensorNames) {
+    const db = Array.isArray(this._medicinesDb) ? this._medicinesDb : [];
+    const seen = new Set();
+    const opts = [];
+    for (const m of db) {
+      const brand = (m.name || "").trim();
+      if (!brand) continue;
+      if (seen.has(brand.toLowerCase())) continue;
+      seen.add(brand.toLowerCase());
+      opts.push({ value: brand, label: brand });
+    }
+    for (const m of db) {
+      const brand = (m.name || "").trim();
+      for (const alias of m.aliases || []) {
+        const a = (alias || "").trim();
+        if (!a) continue;
+        if (seen.has(a.toLowerCase())) continue;
+        seen.add(a.toLowerCase());
+        opts.push({ value: a, label: `${a} → ${brand}` });
+      }
+    }
+    for (const name of existingSensorNames || []) {
+      const n = (name || "").trim();
+      if (!n) continue;
+      if (seen.has(n.toLowerCase())) continue;
+      seen.add(n.toLowerCase());
+      opts.push({ value: n, label: n });
+    }
+    return opts;
+  }
+
+  // Resolve a typed name or alias to the canonical catalog entry.
+  // Brand match wins (avoids surprise auto-renames when a generic name
+  // like "Paracetamol" is also listed as an alias for a brand).
+  _lookupMedNameOrAlias(query) {
+    if (!query) return null;
+    const needle = String(query).trim().toLowerCase();
+    if (!needle) return null;
+    const db = Array.isArray(this._medicinesDb) ? this._medicinesDb : [];
+    for (const m of db) {
+      if ((m.name || "").toLowerCase() === needle) return m;
+    }
+    for (const m of db) {
+      for (const alias of m.aliases || []) {
+        if ((alias || "").toLowerCase() === needle) return m;
+      }
+    }
+    return null;
+  }
+
+  // Apply auto-fill to the Add/Edit draft based on a typed-or-picked
+  // value in the drug-name field. Fills empty atc_code + notes from
+  // the matched catalog entry; never overwrites user-entered values.
+  // Returns true if anything in the draft changed (caller decides
+  // whether to re-render).
+  _applyDrugNameAutoFill(typedValue) {
+    if (!this._editFormDraft || !this._editFormDraft.drug) return false;
+    const draft = this._editFormDraft;
+    const hit = this._lookupMedNameOrAlias(typedValue);
+    if (!hit) {
+      // Unknown / free-text: just keep the typed value (the input
+      // listener already wrote it). No auto-fill.
+      return false;
+    }
+    let changed = false;
+    if (draft.drug.name !== hit.name) {
+      draft.drug.name = hit.name;
+      changed = true;
+    }
+    const userAtc = (draft.drug.atc_code || "").trim();
+    if (!userAtc && hit.atc_code) {
+      draft.drug.atc_code = hit.atc_code;
+      changed = true;
+    }
+    const userNotes = (draft.drug.notes || "").trim();
+    if (!userNotes && hit.active_substance) {
+      draft.drug.notes = `Aktiv substans: ${hit.active_substance}`;
+      changed = true;
+    }
+    return changed;
   }
 
   _signature() {
@@ -2103,14 +2237,29 @@ class PillPilotPanel extends HTMLElement {
         ? `<div class="field-error">${escapeHtml(errMsg(drugErrors[field]))}</div>`
         : "";
 
-    // Build options for the medicine-name datalist (autocomplete) from
-    // sensors already present. Free-text typed values always work
-    // because it's an <input list=...>, not a <select>.
-    const nameOptions = this._getMedicines()
-      .map((m) => escapeHtml(m.attributes.medicine_name || ""))
-      .filter((n) => n)
-      .filter((n, i, arr) => arr.indexOf(n) === i)
-      .map((n) => `<option value="${n}"></option>`)
+    // Build options for the medicine-name datalist (autocomplete).
+    // Combines the bundled medicines catalog (fetched once via
+    // pillpilot/get_medicines_db) with names of medicines already
+    // present in this install. Each catalog alias becomes its own
+    // option so a user typing a misspelling like "alvadon" still finds
+    // Alvedon — the change-listener wired in _wireMainModalListeners
+    // resolves the alias to the canonical brand on commit and auto-
+    // fills ATC + notes (if those fields are empty).
+    //
+    // Free-text typed values that aren't in the list still pass
+    // through — it's an <input list=...>, not a <select>.
+    const existingNames = this._getMedicines().map(
+      (m) => m.attributes.medicine_name || ""
+    );
+    const nameOptions = this._buildNameOptions(existingNames)
+      .map((o) => {
+        // For brand entries (where label == value) the label attribute
+        // is redundant and Chrome shows it twice, so omit it.
+        if (o.label === o.value) {
+          return `<option value="${escapeHtml(o.value)}"></option>`;
+        }
+        return `<option value="${escapeHtml(o.value)}" label="${escapeHtml(o.label)}"></option>`;
+      })
       .join("");
 
     const typeOptions = [
@@ -2493,6 +2642,28 @@ class PillPilotPanel extends HTMLElement {
         }
       });
     });
+
+    // Drug-name auto-fill — fires when the user commits a value
+    // (blurs the field or picks an option from the datalist). On a
+    // catalog hit, rewrites the name to the canonical brand and
+    // pre-fills empty atc_code / notes from the catalog entry. Only
+    // wired on the name field itself; other drug-fields are pure
+    // pass-through.
+    const nameInput = root.querySelector('[data-edit-field="drug.name"]');
+    if (nameInput) {
+      nameInput.addEventListener("change", (e) => {
+        if (!this._editFormDraft) return;
+        const typed = e.currentTarget.value;
+        const changed = this._applyDrugNameAutoFill(typed);
+        if (changed) {
+          // Re-render so the canonical brand name + filled fields show.
+          // Modal stays open because _editingMedicineId / _addingMedicine
+          // is still set, so set hass would have been suppressed; this
+          // explicit _render is the only way to reflect the change.
+          this._render();
+        }
+      });
+    }
 
     // + Add prescription button — opens sub-modal with blank draft.
     root.querySelectorAll('[data-action="add-prescription"]').forEach((btn) => {

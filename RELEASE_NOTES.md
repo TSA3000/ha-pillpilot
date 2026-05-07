@@ -1,3 +1,12 @@
+# v0.1.1
+
+Bug fixes for the in-panel Add and Edit modals.
+
+## Fixes
+
+- **Edit medicine no longer fails with "This medicine no longer exists".** The medicine identity is now exclusively the subentry id that Home Assistant assigns. The previous code stamped a separate uuid into subentry data on create and looked up by that, which silently mismatched the id the panel exposes.
+- **Drug-name autocomplete in the Add and Edit modals** now suggests entries from the bundled Swedish medicine list (and your existing medicines), with alias matching for common misspellings. Picking a known entry auto-fills ATC code and active substance into the notes field.
+
 # v0.1.0
 
 Initial release. Take an HA backup before installing.

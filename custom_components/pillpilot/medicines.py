@@ -283,3 +283,69 @@ def lookup_by_name(
         if med.get("name", "").lower() == needle:
             return med
     return None
+
+
+def lookup_by_name_or_alias(
+    medicines: list[dict[str, Any]], query: str | None
+) -> dict[str, Any] | None:
+    """Find a medicine entry by exact name OR alias (case-insensitive).
+
+    Used by the panel-side Add/Edit modal to resolve user input that
+    might be either a brand name or one of the registered alternate
+    spellings / generic names. Brand-name matches always win over alias
+    matches — if a typed string is both a brand AND another medicine's
+    alias, the brand entry wins. This avoids surprise auto-renames
+    (e.g. typing the generic "Paracetamol" must not silently switch to
+    "Alvedon" just because Alvedon happens to list "paracetamol" as an
+    alias).
+
+    Returns ``None`` when the input is empty or doesn't match anything.
+    """
+    if not query:
+        return None
+    needle = query.strip().lower()
+    if not needle:
+        return None
+    # First pass: brand-name exact match wins.
+    for med in medicines:
+        if med.get("name", "").lower() == needle:
+            return med
+    # Second pass: alias match.
+    for med in medicines:
+        for alias in med.get("aliases", []) or []:
+            if isinstance(alias, str) and alias.strip().lower() == needle:
+                return med
+    return None
+
+
+def sanitize_for_ws(
+    medicines: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Project the medicines list down to the fields the panel needs.
+
+    The panel's autocomplete/auto-fill needs only ``name``, ``aliases``,
+    ``active_substance`` and ``atc_code``. The bundled list also carries
+    ``common_forms``, vendor metadata, and pre-list comments — all
+    irrelevant on the wire and worth not shipping over the websocket
+    on every panel load.
+
+    Nameless entries are dropped; missing optional fields are emitted
+    as empty strings so the panel can rely on the shape.
+    """
+    out: list[dict[str, Any]] = []
+    for med in medicines:
+        name = (med.get("name") or "").strip()
+        if not name:
+            continue
+        aliases_raw = med.get("aliases") or []
+        aliases = [
+            a.strip() for a in aliases_raw
+            if isinstance(a, str) and a.strip()
+        ]
+        out.append({
+            "name": name,
+            "aliases": aliases,
+            "active_substance": (med.get("active_substance") or "").strip(),
+            "atc_code": (med.get("atc_code") or "").strip(),
+        })
+    return out

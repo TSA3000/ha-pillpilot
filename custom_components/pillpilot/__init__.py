@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import datetime
 from typing import Any
 
@@ -34,7 +33,7 @@ from .config_flow import (
     merge_v2_prescriptions_into_existing,
     validate_medicine_input_multi,
 )
-from .medicines import DEFAULT_MEDICINES_DB_URL, MedicineDatabase
+from .medicines import DEFAULT_MEDICINES_DB_URL, MedicineDatabase, sanitize_for_ws
 from .panel import async_register_panel, async_unregister_panel
 from .sources import build_sources
 
@@ -85,13 +84,19 @@ REFRESH_MEDICINES_DB_SCHEMA = vol.Schema(
 
 
 def _medicines_from_subentries(entry: ConfigEntry) -> list[dict[str, Any]]:
-    """Extract medicine config dicts from this entry's subentries."""
+    """Extract medicine config dicts from this entry's subentries.
+
+    The medicine's identity is its HA-assigned ``subentry_id``. We
+    inject that into ``CONF_MED_ID`` on the in-memory dict so the rest
+    of the codebase can keep using ``med[CONF_MED_ID]`` as the lookup
+    key without caring where it came from.
+    """
     out: list[dict[str, Any]] = []
     for sub in entry.subentries.values():
         if sub.subentry_type != SUBENTRY_TYPE_MEDICINE:
             continue
         med = dict(sub.data)
-        med.setdefault(CONF_MED_ID, sub.subentry_id)
+        med[CONF_MED_ID] = sub.subentry_id
         out.append(med)
     return out
 
@@ -471,16 +476,15 @@ async def _ws_update_medicine(
     drug: dict[str, Any] = payload.get("drug") or {}
     prescriptions: list[dict[str, Any]] = payload.get("prescriptions") or []
 
-    # 1. Locate the subentry by medicine_id.
+    # 1. Locate the subentry by medicine_id (which IS the subentry_id —
+    # see _medicines_from_subentries).
     target_entry: ConfigEntry | None = None
     target_subentry: ConfigSubentry | None = None
     for entry in hass.config_entries.async_entries(DOMAIN):
-        for subentry in entry.subentries.values():
-            if subentry.data.get(CONF_MED_ID) == medicine_id:
-                target_entry = entry
-                target_subentry = subentry
-                break
-        if target_subentry is not None:
+        sub = entry.subentries.get(medicine_id)
+        if sub is not None and sub.subentry_type == SUBENTRY_TYPE_MEDICINE:
+            target_entry = entry
+            target_subentry = sub
             break
 
     if target_entry is None or target_subentry is None:
@@ -506,9 +510,10 @@ async def _ws_update_medicine(
         med[CONF_MED_PRESCRIPTIONS],
         dict(target_subentry.data),
     )
-    # medicine_id is immutable — re-pinned at the end so any spread
-    # can't override it.
-    new_data[CONF_MED_ID] = medicine_id
+    # CONF_MED_ID is not persisted in subentry data — the canonical
+    # identity is the subentry_id, which HA owns. Strip any stale value
+    # in case the merge carried one over from older code paths.
+    new_data.pop(CONF_MED_ID, None)
     new_title = build_subentry_title(hass, new_data)
     try:
         hass.config_entries.async_update_subentry(
@@ -604,22 +609,18 @@ async def _ws_create_medicine(
         )
         return
 
-    # 3. Stamp medicine-level id (separate from per-prescription ids,
-    # which validate_medicine_input_multi has already stamped).
-    med[CONF_MED_ID] = uuid.uuid4().hex
-
-    # 4. Persist as a new ConfigSubentry.
+    # 3. Persist as a new ConfigSubentry. HA assigns subentry_id on
+    # construction; that is the canonical medicine_id and is what the
+    # rest of the integration looks up by. CONF_MED_ID is not stored in
+    # data — _medicines_from_subentries injects it from sub.subentry_id.
     title = build_subentry_title(hass, med)
+    new_sub = ConfigSubentry(
+        data=med,
+        subentry_type=SUBENTRY_TYPE_MEDICINE,
+        title=title,
+    )
     try:
-        hass.config_entries.async_add_subentry(
-            target_entry,
-            ConfigSubentry(
-                data=med,
-                subentry_type=SUBENTRY_TYPE_MEDICINE,
-                title=title,
-                unique_id=med[CONF_MED_ID],
-            ),
-        )
+        hass.config_entries.async_add_subentry(target_entry, new_sub)
     except Exception:  # noqa: BLE001
         _LOGGER.exception("Create medicine failed")
         connection.send_result(
@@ -627,8 +628,9 @@ async def _ws_create_medicine(
             {"success": False, "errors": {"base": "create_failed"}},
         )
         return
+    medicine_id = new_sub.subentry_id
 
-    # 5. Refresh the coordinator so the new medicine shows up immediately
+    # 4. Refresh the coordinator so the new medicine shows up immediately
     # in sensors and panel without waiting for the next tick. Same
     # "rebuild medicines list, refresh, no async_reload" pattern as
     # _ws_update_medicine — full reload would tear down the panel.
@@ -639,7 +641,57 @@ async def _ws_create_medicine(
         await coord.async_request_refresh()
 
     connection.send_result(
-        msg["id"], {"success": True, "medicine_id": med[CONF_MED_ID]}
+        msg["id"], {"success": True, "medicine_id": medicine_id}
+    )
+
+
+# ---------------------------------------------------------------------------
+# pillpilot/get_medicines_db — read-only catalog access for the panel modal
+# ---------------------------------------------------------------------------
+#
+# The panel-side Add/Edit modal uses this to populate its drug-name
+# autocomplete and to auto-fill ATC code + active substance when the
+# user picks a known entry. The HA Settings config-flow path uses the
+# same MedicineDatabase singleton via lookup_by_name.
+#
+# Returns:
+#   {success: True, list_version: "...", medicines: [{name, aliases,
+#    active_substance, atc_code}, ...]}
+#
+# If the integration's medicine DB hasn't loaded yet (rare — only at
+# very early boot), returns an empty list rather than failing, so the
+# panel's autocomplete just falls back to "names of meds you've already
+# added" instead of breaking the modal.
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "pillpilot/get_medicines_db",
+    }
+)
+@websocket_api.async_response
+async def _ws_get_medicines_db(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict,
+) -> None:
+    """Return the in-memory medicines catalog for panel autocomplete."""
+    medicine_db: MedicineDatabase | None = (
+        hass.data.get(DOMAIN, {}).get("medicine_db")
+    )
+    if medicine_db is None:
+        connection.send_result(
+            msg["id"],
+            {"success": True, "list_version": "unknown", "medicines": []},
+        )
+        return
+    connection.send_result(
+        msg["id"],
+        {
+            "success": True,
+            "list_version": medicine_db.list_version,
+            "medicines": sanitize_for_ws(medicine_db.medicines),
+        },
     )
 
 
@@ -655,4 +707,5 @@ def _register_websocket_commands(hass: HomeAssistant) -> None:
         return
     websocket_api.async_register_command(hass, _ws_update_medicine)
     websocket_api.async_register_command(hass, _ws_create_medicine)
+    websocket_api.async_register_command(hass, _ws_get_medicines_db)
     domain_data["ws_commands_registered"] = True
