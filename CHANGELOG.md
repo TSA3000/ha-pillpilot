@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.4] — 2026-05-07
+
+- Fix: Delete medicine now works — corrected the `async_remove_subentry` call signature.
+- Fix: Modal error banner shows the underlying exception detail when a WS call fails.
+
 ## [0.1.3] — 2026-05-07
 
 - New: Delete button in the Edit medicine modal — remove a medicine without leaving the panel.

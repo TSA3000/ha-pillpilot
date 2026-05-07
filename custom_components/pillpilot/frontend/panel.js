@@ -633,6 +633,13 @@ const STYLES = `
     color: var(--error-color, #f44336);
     font-size: 13px;
   }
+  .modal-error-detail {
+    margin-top: 6px;
+    font-family: var(--code-font-family, ui-monospace, monospace);
+    font-size: 11px;
+    opacity: 0.85;
+    word-break: break-word;
+  }
   .form-section {
     margin-bottom: 18px;
   }
@@ -933,6 +940,12 @@ class PillPilotPanel extends HTMLElement {
       this._addingMedicine = false;
       this._editFormDraft = null;
       this._editFormErrors = {};
+    this._editFormErrorDetail = null;
+      // Optional human-readable string (typically `ExceptionType: msg`)
+      // that the backend attaches under `error_detail` when something
+      // unexpected blew up. Rendered under the friendly base error so
+      // we can debug without hunting through HA logs.
+      this._editFormErrorDetail = null;
       this._editFormSaving = false;
       this._personSubModal = null;
       // Cached medicines catalog from pillpilot/get_medicines_db. Used
@@ -1762,6 +1775,7 @@ class PillPilotPanel extends HTMLElement {
     this._editingMedicineId = medicineId;
     this._editFormDraft = this._draftFromMed(med);
     this._editFormErrors = {};
+    this._editFormErrorDetail = null;
     this._editFormSaving = false;
     this._render();
   }
@@ -1771,6 +1785,7 @@ class PillPilotPanel extends HTMLElement {
     this._editingMedicineId = null;
     this._editFormDraft = null;
     this._editFormErrors = {};
+    this._editFormErrorDetail = null;
     this._editFormSaving = false;
     // Also close any sub-modal that may be open.
     this._personSubModal = null;
@@ -1789,6 +1804,7 @@ class PillPilotPanel extends HTMLElement {
     this._addingMedicine = true;
     this._editFormDraft = this._blankDraft();
     this._editFormErrors = {};
+    this._editFormErrorDetail = null;
     this._editFormSaving = false;
     this._render();
   }
@@ -1798,6 +1814,7 @@ class PillPilotPanel extends HTMLElement {
     this._addingMedicine = false;
     this._editFormDraft = null;
     this._editFormErrors = {};
+    this._editFormErrorDetail = null;
     this._editFormSaving = false;
     this._personSubModal = null;
     this._lastSig = null;
@@ -1813,6 +1830,7 @@ class PillPilotPanel extends HTMLElement {
     if (!this._hass) return;
     this._editFormSaving = true;
     this._editFormErrors = {};
+    this._editFormErrorDetail = null;
     this._render();
     try {
       const result = await this._hass.callWS({
@@ -2054,6 +2072,7 @@ class PillPilotPanel extends HTMLElement {
     if (!this._hass) return;
     this._editFormSaving = true;
     this._editFormErrors = {};
+    this._editFormErrorDetail = null;
     // Re-render to disable the Save button (visual feedback). We can't
     // call _render directly while _editingMedicineId is set because
     // hass updates are blocked — but _render itself isn't blocked.
@@ -2101,6 +2120,7 @@ class PillPilotPanel extends HTMLElement {
     }
     this._editFormSaving = true;
     this._editFormErrors = {};
+    this._editFormErrorDetail = null;
     this._render();
     try {
       const result = await this._hass.callWS({
@@ -2111,12 +2131,17 @@ class PillPilotPanel extends HTMLElement {
         this._closeEditModal();
       } else {
         this._editFormErrors = (result && result.errors) || { base: "unknown" };
+        // Stash the optional exception detail (string) coming back
+        // from the backend so the banner can show it. Without this
+        // detail, "delete_failed" / "ws_error" stay opaque.
+        this._editFormErrorDetail = (result && result.error_detail) || null;
         this._editFormSaving = false;
         this._render();
       }
     } catch (err) {
       console.error("[PillPilot] delete_medicine WS call failed:", err);
       this._editFormErrors = { base: "ws_error" };
+      this._editFormErrorDetail = (err && (err.message || String(err))) || null;
       this._editFormSaving = false;
       this._render();
     }
@@ -2266,8 +2291,12 @@ class PillPilotPanel extends HTMLElement {
   _renderMainModalShell({ title, closeAction, saveAction, saveLabel, saving, showDelete, body }) {
     const errors = this._editFormErrors || {};
     const errMsg = (key) => this._editErrorText(key);
+    const detail = this._editFormErrorDetail;
+    const detailHtml = detail
+      ? `<div class="modal-error-detail">${escapeHtml(detail)}</div>`
+      : "";
     const baseError = errors && errors.base
-      ? `<div class="modal-error-banner">${escapeHtml(errMsg(errors.base))}</div>`
+      ? `<div class="modal-error-banner">${escapeHtml(errMsg(errors.base))}${detailHtml}</div>`
       : "";
     const deleteBtn = showDelete
       ? `<button class="modal-btn modal-btn-danger" data-action="delete-edit" ${saving ? "disabled" : ""}>Delete medicine</button>`
@@ -2633,6 +2662,7 @@ class PillPilotPanel extends HTMLElement {
       medicine_not_found: "This medicine no longer exists.",
       update_failed: "Saving failed. Please try again.",
       create_failed: "Creating the medicine failed. Please try again.",
+      delete_failed: "Deleting the medicine failed.",
       no_pillpilot_entry: "PillPilot is not set up. Add it from Settings → Devices & Services first.",
       ws_error: "Couldn't reach Home Assistant. Please try again.",
       unknown: "Something went wrong.",

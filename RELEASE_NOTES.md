@@ -1,3 +1,10 @@
+# v0.1.4
+
+## Fixes
+
+- **Delete medicine now actually deletes.** v0.1.3's call to `async_remove_subentry` used the wrong calling convention (passed the subentry object + awaited a non-coroutine); now passes `subentry_id` and treats it as the synchronous callback it is, matching how `async_update_subentry` is already called elsewhere in the integration.
+- **Modal error banner now shows the underlying exception.** When a backend WS call fails (delete, save, create), the actual exception type and message are surfaced under the friendly error text so failures don't require digging through HA logs.
+
 # v0.1.3
 
 Adds an in-panel Delete button to the Edit medicine modal, so removing a medicine no longer requires going to HA Settings → Integrations → PillPilot.

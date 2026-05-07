@@ -691,19 +691,29 @@ async def _ws_delete_medicine(
         )
         return
 
+    # HA's `async_remove_subentry` in the current API is a sync
+    # @callback that removes the subentry from the entry and triggers
+    # registry cleanup via update listeners. It mirrors the calling
+    # convention of `async_update_subentry` already used in this file:
+    # pass the subentry object, no await. (Despite the `async_` prefix,
+    # this family of methods on ConfigEntries are callbacks — `async_`
+    # here means "must be called from the event loop", not coroutine.)
     try:
-        # Mirror async_add_subentry: pass the entry + subentry object.
-        # HA cascades the removal to the entity (registered with
-        # config_subentry_id) and any device that has no other
-        # subentries pointing at it.
-        await hass.config_entries.async_remove_subentry(
-            target_entry, target_subentry
+        hass.config_entries.async_remove_subentry(
+            target_entry, target_subentry.subentry_id
         )
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         _LOGGER.exception("Delete medicine failed for %s", medicine_id)
         connection.send_result(
             msg["id"],
-            {"success": False, "errors": {"base": "delete_failed"}},
+            {
+                "success": False,
+                "errors": {"base": "delete_failed"},
+                # Surface the underlying exception to the panel so the
+                # user (and we) can see what HA actually complained
+                # about, instead of a generic "delete_failed".
+                "error_detail": f"{type(exc).__name__}: {exc}",
+            },
         )
         return
 
