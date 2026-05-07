@@ -1,0 +1,142 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "PillPilot",
+        "description": "Välj hur PillPilot-panelen visas i sidopanelen och var listan med medicinnamn för autokomplettering hämtas ifrån. Båda kan ändras senare via Konfigurera om.",
+        "data": {
+          "panel_visibility": "Sidopanel",
+          "medicines_db_url": "URL för medicinlistan"
+        },
+        "data_description": {
+          "panel_visibility": "Styr om PillPilot-genvägen visas i sidopanelen. Varje användare kan dölja den för sig själv via Profil → Redigera sidopanel oavsett detta val.",
+          "medicines_db_url": "URL som integrationen hämtar medicinnamnslistan från när du klickar på Uppdatera. Standard pekar på den gemensamma listan i upstream-repot. Om du har en egen fork klistrar du in raw-URL:en till din medicines_se.json här."
+        }
+      },
+      "reconfigure": {
+        "title": "PillPilot — inställningar",
+        "description": "Aktuell medicinlista: version {list_version} ({list_count} mediciner). Bocka i 'Uppdatera medicinlistan nu' för att hämta senaste versionen från URL:en nedan.",
+        "data": {
+          "panel_visibility": "Sidopanel",
+          "medicines_db_url": "URL för medicinlistan",
+          "refresh_medicines_now": "Uppdatera medicinlistan nu"
+        },
+        "data_description": {
+          "panel_visibility": "Styr om PillPilot-genvägen visas i sidopanelen. Varje användare kan dölja den för sig själv via Profil → Redigera sidopanel oavsett detta val.",
+          "medicines_db_url": "URL som integrationen hämtar medicinnamnslistan från när du klickar på Uppdatera. Standard pekar på den gemensamma listan i upstream-repot. Om du har en egen fork klistrar du in raw-URL:en till din medicines_se.json här.",
+          "refresh_medicines_now": "Bocka i och spara för att hämta en ny medicinlista från URL:en ovan. Bocken är engångsbruk — den nollställs efter uppdateringen."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "PillPilot är redan konfigurerat."
+    }
+  },
+  "config_subentries": {
+    "medicine": {
+      "initiate_flow": {
+        "user": "Lägg till medicin",
+        "reconfigure": "Ändra medicin"
+      },
+      "entry_type": "Medicin",
+      "step": {
+        "user": {
+          "title": "Lägg till medicin",
+          "description": "Välj medicin från rullgardinen (innehåller vanliga svenska mediciner med alternativa stavningar — skriv t.ex. 'alvadon' för att hitta Alvedon) eller skriv ett namn som inte finns i listan. Välj sedan typ (tablett / droppar / injektion), antal per dos och styrka per enhet i mg. Total dos beräknas som antal × styrka. Frekvens: Daglig ignorerar dagfälten; Veckovis använder 'Veckodagar'; Månadsvis använder 'Månadens dagar' (t.ex. '1, 15' för 2 ggr/månad). Identifierare (varunummer / NPL-id / ATC-kod) är alla valfria — om du väljer från listan fylls ATC-kod och aktiv substans i automatiskt.",
+          "data": {
+            "name": "Medicinnamn (sök eller skriv)",
+            "med_type": "Medicintyp",
+            "unit_count": "Antal per dos (tabletter / droppar / injektioner)",
+            "unit_strength_mg": "Styrka per enhet",
+            "notes": "Anteckningar",
+            "person_id": "Person (valfritt — lämna tomt för hushåll)",
+            "varunummer": "Varunummer (valfritt)",
+            "npl_id": "NPL-id (valfritt)",
+            "atc_code": "ATC-kod (valfritt — fylls i automatiskt om du valde från listan)",
+            "frequency": "Frekvens",
+            "times": "Tidpunkter, kommaseparerade (HH:MM)",
+            "days": "Veckodagar (endast Veckovis)",
+            "days_of_month": "Månadens dagar, kommaseparerade 1–31 (endast Månadsvis)",
+            "remind_window_minutes": "Markera som missad efter (minuter)"
+          }
+        },
+        "reconfigure": {
+          "title": "Ändra medicin",
+          "description": "Uppdatera medicinens schema, dos eller ägare. Att välja ett annat namn från rullgardinen skriver inte över ATC/anteckningar om du redan fyllt i dem.",
+          "data": {
+            "name": "Medicinnamn (sök eller skriv)",
+            "med_type": "Medicintyp",
+            "unit_count": "Antal per dos (tabletter / droppar / injektioner)",
+            "unit_strength_mg": "Styrka per enhet",
+            "notes": "Anteckningar",
+            "person_id": "Person (valfritt — lämna tomt för hushåll)",
+            "varunummer": "Varunummer (valfritt)",
+            "npl_id": "NPL-id (valfritt)",
+            "atc_code": "ATC-kod (valfritt)",
+            "frequency": "Frekvens",
+            "times": "Tidpunkter, kommaseparerade (HH:MM)",
+            "days": "Veckodagar (endast Veckovis)",
+            "days_of_month": "Månadens dagar, kommaseparerade 1–31 (endast Månadsvis)",
+            "remind_window_minutes": "Markera som missad efter (minuter)"
+          }
+        }
+      },
+      "error": {
+        "at_least_one_prescription": "Lägg till minst en ordination.",
+        "days_of_month_invalid": "Månadens dagar måste vara en kommaseparerad lista (t.ex. '1, 15').",
+        "days_of_month_range": "Månadens dagar måste vara mellan 1 och 31.",
+        "days_of_month_required": "Månadsschema kräver minst en dag i månaden.",
+        "invalid_number": "Ange ett giltigt nummer.",
+        "invalid_type": "Typ måste vara Tablett, Droppar eller Injektion.",
+        "name_required": "Läkemedelsnamn krävs."
+      }
+    }
+  },
+  "selector": {
+    "panel_visibility": {
+      "options": {
+        "everyone": "Synlig för alla",
+        "admins": "Endast administratörer",
+        "hidden": "Dold"
+      }
+    }
+  },
+  "services": {
+    "mark_taken": {
+      "name": "Markera tagen",
+      "description": "Registrera en tagen dos."
+    },
+    "skip": {
+      "name": "Hoppa över",
+      "description": "Markera en dos som hoppad."
+    },
+    "snooze": {
+      "name": "Snooza",
+      "description": "Skjut upp påminnelsen."
+    },
+    "unmark_taken": {
+      "name": "Ångra tagen dos",
+      "description": "Ta bort den senaste \"tagen\"-noteringen för en medicin — motsatsen till mark_taken. Driver panelens hover-ångra och Ångra senaste händelsen per person.",
+      "fields": {
+        "medicine_id": {
+          "name": "Medicin-id",
+          "description": "Det interna id:t för medicinen."
+        },
+        "scheduled_for": {
+          "name": "Schemalagd tid",
+          "description": "Vilken tidpunkt som ska ångras när en medicin har flera tider per dag. Standard är senaste tagna noteringen."
+        }
+      }
+    },
+    "refresh_medicines_database": {
+      "name": "Uppdatera medicindatabas",
+      "description": "Hämta en färsk medicines_se.json från konfigurerad URL (eller en URL som skickas med anropet). Autokompletteringslistan uppdateras nästa gång du öppnar formuläret Lägg till medicin.",
+      "fields": {
+        "url": {
+          "name": "URL-överstyrning",
+          "description": "Valfri. Om utelämnad används URL:en från integrationsinställningarna. Skicka med en URL här om du vill testa en annan fork utan att ändra inställningarna."
+        }
+      }
+    }
+  }
+}

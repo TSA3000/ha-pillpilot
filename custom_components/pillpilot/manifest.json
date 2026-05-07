@@ -1,0 +1,13 @@
+{
+  "domain": "pillpilot",
+  "name": "PillPilot",
+  "version": "0.1.0",
+  "documentation": "https://github.com/TSA3000/ha-pillpilot",
+  "issue_tracker": "https://github.com/TSA3000/ha-pillpilot/issues",
+  "codeowners": ["@TSA3000"],
+  "config_flow": true,
+  "iot_class": "cloud_polling",
+  "integration_type": "service",
+  "requirements": ["aiohttp>=3.9.0"],
+  "dependencies": []
+}

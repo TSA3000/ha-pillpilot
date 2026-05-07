@@ -1,0 +1,142 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "PillPilot",
+        "description": "Choose how the PillPilot panel appears in the sidebar, and where the medicine name autocomplete list comes from. You can change both later via Reconfigure.",
+        "data": {
+          "panel_visibility": "Sidebar panel",
+          "medicines_db_url": "Medicine list URL"
+        },
+        "data_description": {
+          "panel_visibility": "Controls whether the PillPilot sidebar entry appears. Each user can independently hide it from their own sidebar via Profile → Edit sidebar regardless of this setting.",
+          "medicines_db_url": "URL the integration pulls the medicine name list from when you click Refresh. The default points at the upstream community list. If you maintain your own fork, paste the raw GitHub URL of your medicines_se.json here."
+        }
+      },
+      "reconfigure": {
+        "title": "PillPilot — settings",
+        "description": "Currently loaded medicine list: version {list_version} ({list_count} medicines). Toggle 'Refresh medicine list now' to pull the latest version from the URL below.",
+        "data": {
+          "panel_visibility": "Sidebar panel",
+          "medicines_db_url": "Medicine list URL",
+          "refresh_medicines_now": "Refresh medicine list now"
+        },
+        "data_description": {
+          "panel_visibility": "Controls whether the PillPilot sidebar entry appears. Each user can independently hide it from their own sidebar via Profile → Edit sidebar regardless of this setting.",
+          "medicines_db_url": "URL the integration pulls the medicine name list from when you click Refresh. The default points at the upstream community list. If you maintain your own fork, paste the raw GitHub URL of your medicines_se.json here.",
+          "refresh_medicines_now": "Check this and submit to fetch a fresh medicine list from the URL above. The toggle is one-shot — it clears itself after the refresh runs."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "PillPilot is already set up."
+    }
+  },
+  "config_subentries": {
+    "medicine": {
+      "initiate_flow": {
+        "user": "Add medicine",
+        "reconfigure": "Reconfigure medicine"
+      },
+      "entry_type": "Medicine",
+      "step": {
+        "user": {
+          "title": "Add medicine",
+          "description": "Pick a medicine from the dropdown (it has common Swedish meds with alternate spellings — type 'alvadon' to find Alvedon, etc.) or type a name that's not in the list. Then pick the type (pill / drops / injection), how many you take per dose, and the strength of each unit in mg. Total dose is computed as count × strength. Pick a frequency: Daily ignores the day fields; Weekly uses 'Days of week'; Monthly uses 'Days of month' (e.g. '1, 15' for 2× per month). Identifiers (varunummer / NPL ID / ATC code) are all optional — picking from the dropdown auto-fills ATC and active substance for you.",
+          "data": {
+            "name": "Medicine name (search or type)",
+            "med_type": "Medicine type",
+            "unit_count": "Per-dose count (number of pills / drops / injections)",
+            "unit_strength_mg": "Strength per unit",
+            "notes": "Notes",
+            "person_id": "Person (optional — leave blank for household)",
+            "varunummer": "Varunummer (optional)",
+            "npl_id": "NPL ID (optional)",
+            "atc_code": "ATC code (optional — auto-filled if you pick from list)",
+            "frequency": "Frequency",
+            "times": "Times of day, comma-separated (HH:MM)",
+            "days": "Days of week (Weekly only)",
+            "days_of_month": "Days of month, comma-separated 1–31 (Monthly only)",
+            "remind_window_minutes": "Mark as missed after (minutes)"
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure medicine",
+          "description": "Update the medicine's schedule, dose, or owner. Picking a different name from the dropdown will not overwrite ATC/notes if you've already filled them.",
+          "data": {
+            "name": "Medicine name (search or type)",
+            "med_type": "Medicine type",
+            "unit_count": "Per-dose count (number of pills / drops / injections)",
+            "unit_strength_mg": "Strength per unit",
+            "notes": "Notes",
+            "person_id": "Person (optional — leave blank for household)",
+            "varunummer": "Varunummer (optional)",
+            "npl_id": "NPL ID (optional)",
+            "atc_code": "ATC code (optional)",
+            "frequency": "Frequency",
+            "times": "Times of day, comma-separated (HH:MM)",
+            "days": "Days of week (Weekly only)",
+            "days_of_month": "Days of month, comma-separated 1–31 (Monthly only)",
+            "remind_window_minutes": "Mark as missed after (minutes)"
+          }
+        }
+      },
+      "error": {
+        "at_least_one_prescription": "Add at least one prescription.",
+        "days_of_month_invalid": "Days of month must be a comma-separated list of integers (e.g. '1, 15').",
+        "days_of_month_range": "Days of month must each be between 1 and 31.",
+        "days_of_month_required": "Monthly frequency requires at least one day of the month.",
+        "invalid_number": "Enter a valid number.",
+        "invalid_type": "Type must be Pill, Drops, or Injection.",
+        "name_required": "Medicine name is required."
+      }
+    }
+  },
+  "selector": {
+    "panel_visibility": {
+      "options": {
+        "everyone": "Visible to everyone",
+        "admins": "Admins only",
+        "hidden": "Hidden"
+      }
+    }
+  },
+  "services": {
+    "mark_taken": {
+      "name": "Mark taken",
+      "description": "Record a taken dose."
+    },
+    "skip": {
+      "name": "Skip dose",
+      "description": "Mark a dose as skipped."
+    },
+    "snooze": {
+      "name": "Snooze",
+      "description": "Push the reminder out."
+    },
+    "unmark_taken": {
+      "name": "Unmark dose as taken",
+      "description": "Remove the most recent \"taken\" record for a medicine — the inverse of mark_taken. Powers the panel's hover-undo and per-person Undo last action.",
+      "fields": {
+        "medicine_id": {
+          "name": "Medicine ID",
+          "description": "The internal id of the medicine."
+        },
+        "scheduled_for": {
+          "name": "Scheduled for",
+          "description": "Which slot to undo when a medicine has multiple times per day. Defaults to the most recent taken record."
+        }
+      }
+    },
+    "refresh_medicines_database": {
+      "name": "Refresh medicines database",
+      "description": "Pull a fresh copy of medicines_se.json from the configured URL (or override URL passed to the call). Updates the autocomplete dropdown the next time the Add Medicine form is opened.",
+      "fields": {
+        "url": {
+          "name": "URL override",
+          "description": "Optional. If omitted, uses the URL configured in the integration. If you want to test pulling from a different fork without changing settings, pass it here."
+        }
+      }
+    }
+  }
+}

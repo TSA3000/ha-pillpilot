@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# Local-only docs / planning that shouldn't ship publicly
+ROADMAP.md
+*.local.md
+
+# Build outputs
+*.zip
+dist/
+build/

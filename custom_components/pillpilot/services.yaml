@@ -1,0 +1,122 @@
+mark_taken:
+  name: Mark medicine as taken
+  description: Record that a dose has been taken.
+  fields:
+    medicine_id:
+      name: Medicine ID
+      description: The internal id of the medicine (see sensor attributes).
+      required: true
+      example: "a1b2c3d4e5f6"
+      selector:
+        text:
+    person_id:
+      name: Person
+      description: "Optional. For multi-prescription medicines (one drug, multiple people in the household), pin this action to a specific person's prescription. Pass the person entity id (e.g. person.sam) or omit for household / single-prescription medicines."
+      required: false
+      example: "person.sam"
+      selector:
+        entity:
+          domain: person
+    when:
+      name: When
+      description: Timestamp of when it was taken. Defaults to now.
+      required: false
+      example: "2026-05-04T08:05:00+02:00"
+      selector:
+        datetime:
+    scheduled_for:
+      name: Scheduled for
+      description: Which scheduled slot this action belongs to. Use this when a medicine has multiple times per day to pin the action to a specific slot. Defaults to the closest scheduled time.
+      required: false
+      example: "2026-05-04T08:00:00+02:00"
+      selector:
+        datetime:
+
+skip:
+  name: Skip dose
+  description: Mark the current scheduled dose as skipped.
+  fields:
+    medicine_id:
+      name: Medicine ID
+      required: true
+      selector:
+        text:
+    person_id:
+      name: Person
+      description: "Optional. For multi-prescription medicines, pin this skip to a specific person's prescription."
+      required: false
+      example: "person.sam"
+      selector:
+        entity:
+          domain: person
+    scheduled_for:
+      name: Scheduled for
+      description: Which scheduled slot to skip. Use this when a medicine has multiple times per day. Defaults to the closest scheduled time.
+      required: false
+      example: "2026-05-04T08:00:00+02:00"
+      selector:
+        datetime:
+
+snooze:
+  name: Snooze reminder
+  description: Push the current reminder out by N minutes.
+  fields:
+    medicine_id:
+      name: Medicine ID
+      required: true
+      selector:
+        text:
+    person_id:
+      name: Person
+      description: "Optional. For multi-prescription medicines, pin this snooze to a specific person's prescription."
+      required: false
+      example: "person.sam"
+      selector:
+        entity:
+          domain: person
+    minutes:
+      name: Minutes
+      required: true
+      default: 15
+      selector:
+        number:
+          min: 1
+          max: 240
+          unit_of_measurement: min
+
+unmark_taken:
+  name: Unmark dose as taken
+  description: Remove the most recent "taken" record for a medicine — the inverse of mark_taken. Used by the panel's hover-undo and bulk Undo. The fired pillpilot_dose_unmarked event lets automations roll back any side-effects of a previous pillpilot_dose_taken.
+  fields:
+    medicine_id:
+      name: Medicine ID
+      required: true
+      selector:
+        text:
+    person_id:
+      name: Person
+      description: "Optional. For multi-prescription medicines, restrict the undo to records for a specific person's prescription."
+      required: false
+      example: "person.sam"
+      selector:
+        entity:
+          domain: person
+    scheduled_for:
+      name: Scheduled for
+      description: Which scheduled slot to undo. Use this when the medicine has multiple times per day. Defaults to the most recent taken record regardless of slot.
+      required: false
+      example: "2026-05-04T07:00:00+02:00"
+      selector:
+        datetime:
+
+refresh_medicines_database:
+  name: Refresh medicines database
+  description: Pull a fresh copy of medicines_se.json from the configured URL (or from a URL passed to the call). Updates the autocomplete dropdown the next time the Add Medicine form is opened.
+  fields:
+    url:
+      name: URL override
+      description: Optional. If omitted, uses the URL configured in the integration. Pass it here to test a different fork without changing settings.
+      required: false
+      example: "https://raw.githubusercontent.com/TSA3000/ha-pillpilot/main/custom_components/pillpilot/medicines_se.json"
+      selector:
+        text:

@@ -1,0 +1,64 @@
+name: Release
+
+# Fires when you push a tag that looks like a SemVer version (e.g. v0.1.0).
+# Builds a zip of the integration, creates a GitHub Release using the tag,
+# and uses RELEASE_NOTES.md as the release body.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write   # needed to create releases
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify manifest version matches the tag
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          MANIFEST_VERSION=$(jq -r .version custom_components/pillpilot/manifest.json)
+          echo "Tag version: $TAG"
+          echo "Manifest version: $MANIFEST_VERSION"
+          if [ "$TAG" != "$MANIFEST_VERSION" ]; then
+            echo "::error::Tag $TAG does not match manifest version $MANIFEST_VERSION."
+            echo "::error::Bump 'version' in custom_components/pillpilot/manifest.json before tagging."
+            exit 1
+          fi
+
+      - name: Package integration as zip
+        id: package
+        run: |
+          # Strip the leading "v" so the filename matches the manifest version
+          # exactly (e.g. tag v0.1.1 → ha-pillpilot-0.1.1.zip). Zip name uses
+          # the repo name (ha-pillpilot) rather than just the integration name
+          # so downloaded artifacts are unambiguous.
+          #
+          # README.md and RELEASE_NOTES.md are NOT copied into the zip. HACS
+          # reads README from the GitHub repo (via render_readme: true in
+          # hacs.json) and reads release notes from the GitHub release body
+          # (which the next step populates from RELEASE_NOTES.md). The zip
+          # is for HA to consume — HA doesn't need or use README.
+          VERSION="${GITHUB_REF_NAME#v}"
+          ZIP_NAME="ha-pillpilot-${VERSION}.zip"
+          cd custom_components
+          zip -r "../${ZIP_NAME}" pillpilot \
+            -x "*/__pycache__/*" "*.pyc"
+          cd ..
+          ls -lh "${ZIP_NAME}"
+          echo "zip_name=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: PillPilot ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          files: ${{ steps.package.outputs.zip_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

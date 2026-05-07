@@ -1,0 +1,93 @@
+blueprint:
+  name: PillPilot — mobile notification
+  description: >-
+    Sends an actionable notification to a mobile_app device whenever a dose is
+    due, with "Taken / Snooze 15m / Skip" buttons that call the integration's
+    services. Optionally re-pings on `dose_missed` events.
+
+    Use the "Limit to person" input to route notifications: leave blank to fire
+    for every dose (single-user setup), or pick `person.alice` so this
+    automation only triggers for Alice's medicines. For a multi-user household
+    you'd typically create one automation per person, each pointing at the
+    matching phone.
+  domain: automation
+  source_url: https://github.com/TSA3000/ha-pillpilot
+  input:
+    notify_target:
+      name: Notification target
+      description: A notify.<service> for your phone (e.g. notify.mobile_app_pixel_8)
+      selector:
+        text:
+    person_filter:
+      name: Limit to person
+      description: >-
+        Optional. If set, only fire for doses owned by this person. Leave blank
+        to fire for every dose (and shared/household ones).
+      default: ""
+      selector:
+        entity:
+          domain: person
+    repeat_on_missed:
+      name: Repeat when missed
+      description: Send another notification when a dose is missed
+      default: true
+      selector:
+        boolean:
+
+variables:
+  notify_target: !input notify_target
+  person_filter: !input person_filter
+
+trigger:
+  - platform: event
+    event_type: pillpilot_dose_due
+    id: due
+  - platform: event
+    event_type: pillpilot_dose_missed
+    id: missed
+
+condition:
+  - condition: template
+    value_template: >-
+      {{ person_filter == '' or trigger.event.data.person_id == person_filter }}
+
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: due
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "💊 Time for {{ trigger.event.data.name }}"
+              message: >-
+                Take {{ trigger.event.data.dose or 'your dose' }}.
+              data:
+                tag: "med_{{ trigger.event.data.medicine_id }}"
+                actions:
+                  - action: "PILL_TAKEN_{{ trigger.event.data.medicine_id }}"
+                    title: "Taken ✅"
+                  - action: "PILL_SNOOZE_{{ trigger.event.data.medicine_id }}"
+                    title: "Snooze 15m ⏰"
+                  - action: "PILL_SKIP_{{ trigger.event.data.medicine_id }}"
+                    title: "Skip ⏭"
+      - conditions:
+          - condition: trigger
+            id: missed
+          - condition: template
+            value_template: "{{ repeat_on_missed }}"
+        sequence:
+          - service: "{{ notify_target }}"
+            data:
+              title: "⚠️ Missed dose: {{ trigger.event.data.name }}"
+              message: "Scheduled for {{ trigger.event.data.scheduled_for }}"
+              data:
+                tag: "med_{{ trigger.event.data.medicine_id }}_missed"
+                actions:
+                  - action: "PILL_TAKEN_{{ trigger.event.data.medicine_id }}"
+                    title: "Taken now ✅"
+                  - action: "PILL_SKIP_{{ trigger.event.data.medicine_id }}"
+                    title: "Skip ⏭"
+
+mode: parallel
+max: 25

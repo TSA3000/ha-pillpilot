@@ -1,0 +1,36 @@
+blueprint:
+  name: PillPilot — handle notification actions
+  description: >-
+    Listens for `mobile_app_notification_action` events fired when the user
+    taps Taken / Snooze / Skip on a PillPilot notification, and calls
+    the matching integration service.
+  domain: automation
+  source_url: https://github.com/TSA3000/ha-pillpilot
+
+trigger:
+  - platform: event
+    event_type: mobile_app_notification_action
+
+action:
+  - variables:
+      action: "{{ trigger.event.data.action }}"
+  - choose:
+      - conditions: "{{ action.startswith('PILL_TAKEN_') }}"
+        sequence:
+          - service: pillpilot.mark_taken
+            data:
+              medicine_id: "{{ action[len('PILL_TAKEN_'):] }}"
+      - conditions: "{{ action.startswith('PILL_SNOOZE_') }}"
+        sequence:
+          - service: pillpilot.snooze
+            data:
+              medicine_id: "{{ action[len('PILL_SNOOZE_'):] }}"
+              minutes: 15
+      - conditions: "{{ action.startswith('PILL_SKIP_') }}"
+        sequence:
+          - service: pillpilot.skip
+            data:
+              medicine_id: "{{ action[len('PILL_SKIP_'):] }}"
+
+mode: parallel
+max: 25
