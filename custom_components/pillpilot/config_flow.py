@@ -210,7 +210,7 @@ def validate_medicine_input(
             int(d) for d in user_input.get(CONF_MED_DAYS, [])
         ],
         CONF_MED_DAYS_OF_MONTH: doms,
-        CONF_MED_REMIND_WINDOW: user_input[CONF_MED_REMIND_WINDOW],
+        CONF_MED_REMIND_WINDOW: int(user_input[CONF_MED_REMIND_WINDOW]),
     }
     med = {
         # drug identity (shared across prescriptions)
@@ -983,6 +983,14 @@ class MedicineSubentryFlow(ConfigSubentryFlow):
                 vol.Required(
                     CONF_MED_REMIND_WINDOW,
                     default=defaults[CONF_MED_REMIND_WINDOW],
-                ): vol.All(int, vol.Range(min=5, max=240)),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=5,
+                        max=240,
+                        step=5,
+                        mode=NumberSelectorMode.SLIDER,
+                        unit_of_measurement="min",
+                    )
+                ),
             }
         )

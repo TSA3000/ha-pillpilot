@@ -98,6 +98,34 @@ const STYLES = `
     font-family: inherit;
   }
   .add-btn:hover { opacity: 0.9; }
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .config-btn {
+    background: transparent;
+    color: var(--secondary-text-color, #727272);
+    border: 1px solid var(--divider-color, rgba(0,0,0,0.12));
+    border-radius: 8px;
+    /* Match .add-btn's vertical footprint so they line up. The width is
+       intentionally compact — this is a secondary action, accessed by
+       icon. On mobile the gear glyph is unambiguous and saves room. */
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    font-size: 18px;
+    font-family: inherit;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    line-height: 1;
+  }
+  .config-btn:hover {
+    background: var(--secondary-background-color, #f5f5f5);
+    color: var(--primary-text-color, #212121);
+  }
   .today-section {
     background: var(--card-background-color, #fff);
     border: 1px solid var(--divider-color, rgba(0,0,0,0.12));
@@ -2237,7 +2265,10 @@ class PillPilotPanel extends HTMLElement {
             <h1>PillPilot</h1>
             <p class="subtitle">No medicines yet</p>
           </div>
-          <button class="add-btn" data-action="add">+ Add medicine</button>
+          <div class="header-actions">
+            <button class="config-btn" data-action="open-config" aria-label="Configure integration" title="Configure integration">⚙</button>
+            <button class="add-btn" data-action="add">+ Add medicine</button>
+          </div>
         </header>
         <div class="empty">
           Click <a class="empty-link" href="#" data-action="add">+ Add medicine</a> above to get started.
@@ -2892,7 +2923,10 @@ class PillPilotPanel extends HTMLElement {
             <h1>PillPilot</h1>
             <p class="subtitle">${escapeHtml(subtitle)}</p>
           </div>
-          <button class="add-btn" data-action="add">+ Add medicine</button>
+          <div class="header-actions">
+            <button class="config-btn" data-action="open-config" aria-label="Configure integration" title="Configure integration">⚙</button>
+            <button class="add-btn" data-action="add">+ Add medicine</button>
+          </div>
         </header>
         ${personGroups.length > 0 ? this._renderTodaySection(personGroups) : ""}
         ${medGroups.map(([_, g]) => this._renderPersonSection(g)).join("")}
@@ -3306,6 +3340,21 @@ class PillPilotPanel extends HTMLElement {
       el.addEventListener("click", (e) => {
         e.preventDefault();
         this._openAddModal();
+      });
+    });
+    root.querySelectorAll('[data-action="open-config"]').forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.preventDefault();
+        // HA's SPA router listens for `location-changed` events on
+        // window. Pushing to history alone doesn't trigger the route
+        // swap — the event is what makes the navigation happen
+        // without a full page reload. Pattern is documented for
+        // custom panels and used by lovelace itself.
+        const target = "/config/integrations/integration/pillpilot";
+        history.pushState(null, "", target);
+        window.dispatchEvent(
+          new CustomEvent("location-changed", { composed: true, bubbles: true })
+        );
       });
     });
   }

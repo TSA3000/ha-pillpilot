@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.5-beta2] — 2026-05-08
+
+- New: ⚙ button in the panel header next to "+ Add medicine" — opens the integration's config page in HA Settings without leaving the SPA.
+- UX: missed-after-minutes setting in the config / reconfigure form now uses HA's slider-with-linked-number-input selector. Mobile-friendly drag target plus a tappable input for precise entry. Range 5–240 min, step 5.
+
 ## [0.1.5-beta1] — 2026-05-08
 
 - Fix: prescription summary in the modal now shows the correct unit for drops and injections (was always saying "pill").

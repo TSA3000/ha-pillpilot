@@ -1,3 +1,17 @@
+# v0.1.5-beta2
+
+> Pre-release. HACS users on the stable channel won't see this update — only those with "show beta versions" enabled.
+
+Two small UX additions on top of beta1.
+
+## New
+
+- **⚙ Configure-integration button** in the panel header, sitting next to "+ Add medicine". One tap takes you to HA Settings → Devices & Services → PillPilot. Useful as a shortcut to the parent reconfigure form (panel visibility, medicines DB URL) without navigating through the side menu.
+
+## UX
+
+- **Missed-after-minutes is now a proper slider with a linked number input.** Drag the slider for quick adjustment, or tap the number to type a precise value — both stay in sync. Range 5–240 minutes, step 5. Mobile-friendly drag target with tap-to-enter fallback for narrow screens.
+
 # v0.1.5-beta1
 
 > Pre-release. HACS users on the stable channel won't see this update — only those with "show beta versions" enabled. Open the integration in HACS → three dots → Redownload → enable beta to install.
