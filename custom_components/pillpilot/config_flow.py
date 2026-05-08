@@ -21,6 +21,7 @@ is what tells Home Assistant that this integration supports
 """
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Any
 
@@ -70,6 +71,7 @@ from .const import (
     DEFAULT_PANEL_VISIBILITY,
     DEFAULT_REMIND_WINDOW,
     DOMAIN,
+    ALL_FREQUENCIES,
     FREQ_DAILY,
     FREQ_MONTHLY,
     FREQ_WEEKLY,
@@ -98,6 +100,45 @@ from .medicines import (
 # core pure-data transformation out into this module-level function.
 # Both call sites end up with identical (medicine_dict, errors) shape.
 
+# HH:MM with optional single-digit hour. Hours 0-23, minutes 0-59. We
+# normalize "9:00" → "09:00" so downstream code (cron equivalent,
+# display, sorting) can rely on a single canonical format.
+_HHMM_RE = re.compile(r"^([01]?\d|2[0-3]):[0-5]\d$")
+
+
+def _normalize_times(times_iter) -> tuple[list[str], str | None]:
+    """Validate and zero-pad a sequence of HH:MM strings.
+
+    Returns (normalized_list, None) on success, ([], error_key) on the
+    first malformed entry. Empty / whitespace-only entries are skipped
+    silently — that matches the existing comma-string parser's
+    behavior. Caller decides whether an empty list is itself an error.
+    """
+    out: list[str] = []
+    for t in times_iter:
+        s = str(t).strip()
+        if not s:
+            continue
+        if not _HHMM_RE.match(s):
+            return [], "times_invalid"
+        h, m = s.split(":")
+        out.append(f"{int(h):02d}:{m}")
+    return out, None
+
+
+def _strip_or_none(value) -> str | None:
+    """Trim whitespace; return None if the result is empty.
+
+    Used for optional drug-identity fields (atc_code, npl_id,
+    varunummer) so leading/trailing whitespace doesn't cause
+    "Levaxin " and "Levaxin" to be treated as different drugs.
+    """
+    if value is None:
+        return None
+    s = str(value).strip()
+    return s or None
+
+
 def validate_medicine_input(
     hass,
     user_input: dict[str, Any],
@@ -124,6 +165,8 @@ def validate_medicine_input(
 
     # Parse days_of_month
     freq = user_input.get(CONF_MED_FREQUENCY) or FREQ_WEEKLY
+    if freq not in ALL_FREQUENCIES:
+        errors[CONF_MED_FREQUENCY] = "frequency_invalid"
     doms_raw = (user_input.get(CONF_MED_DAYS_OF_MONTH) or "").strip()
     doms: list[int] = []
     if doms_raw:
@@ -181,6 +224,7 @@ def validate_medicine_input(
         notes_final = f"Aktiv substans: {lookup['active_substance']}"
     else:
         notes_final = user_notes
+    notes_final = notes_final.strip() if notes_final else notes_final
 
     # build a v2-shaped medicine — drug identity at top level,
     # the form's single set of dose+schedule fields wrapped in a
@@ -203,6 +247,17 @@ def validate_medicine_input(
         days_parsed = [int(d) for d in user_input.get(CONF_MED_DAYS, [])]
     except (TypeError, ValueError):
         return None, {CONF_MED_DAYS: "days_invalid"}
+    # Range-check: weekdays must be 0–6 (Monday=0 through Sunday=6).
+    if any(d < 0 or d > 6 for d in days_parsed):
+        return None, {CONF_MED_DAYS: "days_range"}
+
+    # Parse times — accept comma-string form, validate HH:MM format,
+    # zero-pad single-digit hours so downstream code sees canonical form.
+    times_normalized, times_err = _normalize_times(
+        user_input[CONF_MED_TIMES].split(",")
+    )
+    if times_err is not None:
+        return None, {CONF_MED_TIMES: times_err}
 
     prescription = {
         CONF_PRESCRIPTION_ID: uuid.uuid4().hex,
@@ -212,11 +267,7 @@ def validate_medicine_input(
         CONF_MED_TOTAL_DOSE_MG: dose.total_mg,
         CONF_MED_DOSE: dose_text,
         CONF_MED_FREQUENCY: freq,
-        CONF_MED_TIMES: [
-            t.strip()
-            for t in user_input[CONF_MED_TIMES].split(",")
-            if t.strip()
-        ],
+        CONF_MED_TIMES: times_normalized,
         CONF_MED_DAYS: days_parsed,
         CONF_MED_DAYS_OF_MONTH: doms,
         CONF_MED_REMIND_WINDOW: int(user_input[CONF_MED_REMIND_WINDOW]),
@@ -226,8 +277,8 @@ def validate_medicine_input(
         CONF_MED_NAME: med_name,
         CONF_MED_TYPE: dose.med_type,
         CONF_MED_NOTES: notes_final,
-        CONF_MED_NPL_ID: user_input.get(CONF_MED_NPL_ID) or None,
-        CONF_MED_VARUNUMMER: user_input.get(CONF_MED_VARUNUMMER) or None,
+        CONF_MED_NPL_ID: _strip_or_none(user_input.get(CONF_MED_NPL_ID)),
+        CONF_MED_VARUNUMMER: _strip_or_none(user_input.get(CONF_MED_VARUNUMMER)),
         CONF_MED_ATC_CODE: atc_final,
         # prescriptions
         CONF_MED_PRESCRIPTIONS: [prescription],
@@ -429,6 +480,8 @@ def validate_medicine_input_multi(
 
         # Parse days_of_month — accept either comma-string or list.
         freq = p.get(CONF_MED_FREQUENCY) or FREQ_DAILY
+        if freq not in ALL_FREQUENCIES:
+            p_errors[CONF_MED_FREQUENCY] = "frequency_invalid"
         doms_raw = p.get(CONF_MED_DAYS_OF_MONTH) or []
         doms: list[int] = []
         if isinstance(doms_raw, str):
@@ -475,21 +528,32 @@ def validate_medicine_input_multi(
             prescription_errors.append(p_errors)
             continue
 
-        # Parse times — accept comma-string or list.
+        # Parse times — accept comma-string or list. Validate HH:MM
+        # format and zero-pad single-digit hours.
         times_raw = p.get(CONF_MED_TIMES) or []
         if isinstance(times_raw, str):
-            times = [t.strip() for t in times_raw.split(",") if t.strip()]
+            times_iter = times_raw.split(",")
         else:
-            times = [str(t).strip() for t in times_raw if str(t).strip()]
+            times_iter = times_raw
+        times, times_err = _normalize_times(times_iter)
+        if times_err is not None:
+            p_errors[CONF_MED_TIMES] = times_err
+            prescription_errors.append(p_errors)
+            continue
 
         # Parse days — accept list of ints or list of strings. Non-numeric
         # entries (e.g. WS client sends ["Mon"] instead of [1]) would
-        # crash int() — surface as days_invalid instead.
+        # crash int() — surface as days_invalid instead. Range-check 0-6
+        # so out-of-range values like [99] don't sneak through.
         days_raw = p.get(CONF_MED_DAYS) or []
         try:
             days = [int(d) for d in days_raw]
         except (TypeError, ValueError):
             p_errors[CONF_MED_DAYS] = "days_invalid"
+            prescription_errors.append(p_errors)
+            continue
+        if any(d < 0 or d > 6 for d in days):
+            p_errors[CONF_MED_DAYS] = "days_range"
             prescription_errors.append(p_errors)
             continue
 
@@ -530,9 +594,9 @@ def validate_medicine_input_multi(
         lookup_by_name(med_db.medicines, name)
         if med_db is not None else None
     )
-    user_atc = drug.get(CONF_MED_ATC_CODE) or ""
+    user_atc = (drug.get(CONF_MED_ATC_CODE) or "").strip()
     atc_final = user_atc or (lookup.get("atc_code") if lookup else "") or None
-    user_notes = drug.get(CONF_MED_NOTES) or ""
+    user_notes = (drug.get(CONF_MED_NOTES) or "").strip()
     if not user_notes and lookup and lookup.get("active_substance"):
         notes_final = lookup["active_substance"]
     else:
@@ -542,8 +606,8 @@ def validate_medicine_input_multi(
         CONF_MED_NAME: name,
         CONF_MED_TYPE: med_type,
         CONF_MED_NOTES: notes_final,
-        CONF_MED_NPL_ID: drug.get(CONF_MED_NPL_ID) or None,
-        CONF_MED_VARUNUMMER: drug.get(CONF_MED_VARUNUMMER) or None,
+        CONF_MED_NPL_ID: _strip_or_none(drug.get(CONF_MED_NPL_ID)),
+        CONF_MED_VARUNUMMER: _strip_or_none(drug.get(CONF_MED_VARUNUMMER)),
         CONF_MED_ATC_CODE: atc_final,
         CONF_MED_PRESCRIPTIONS: validated_prescriptions,
     }, {}

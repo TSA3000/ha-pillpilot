@@ -1440,7 +1440,10 @@ class PillPilotPanel extends HTMLElement {
       const a = m.attributes;
       const prescriptions = a.prescriptions || [];
       // One signature line per (medicine, prescription) pair so changes
-      // to prescriptions[1+] also fire a re-render.
+      // to prescriptions[1+] also fire a re-render. Drug-level fields
+      // (med_type, atc_code) are repeated in each line — slightly
+      // wasteful but ensures edits to drug identity still bump the
+      // signature even when prescription state is unchanged.
       for (const p of prescriptions) {
         const td = (p.today_doses || [])
           .map((d) => `${d.time}:${d.status}:${d.action_at || ""}`)
@@ -1453,6 +1456,8 @@ class PillPilotPanel extends HTMLElement {
           p.next_dose_at || "",
           p.person_name || "",
           a.medicine_name || "",
+          a.med_type || "",
+          a.atc_code || "",
           p.dose || "",
           a.notes || "",
           td,
@@ -2735,7 +2740,10 @@ class PillPilotPanel extends HTMLElement {
       days_of_month_invalid: "Couldn't parse days of month — use comma-separated numbers.",
       days_of_month_required: "Monthly schedule needs at least one day of the month.",
       days_invalid: "Couldn't parse weekdays — expected 0–6 (Mon–Sun).",
+      days_range: "Weekdays must be between 0 (Mon) and 6 (Sun).",
       duplicate_prescription_id: "This prescription has the same id as another. Each must be unique.",
+      frequency_invalid: "Frequency must be daily, weekly, or monthly.",
+      times_invalid: "Times must be in HH:MM format (e.g. '07:00' or '7:00').",
       invalid_number: "Enter a valid number.",
       // Sub-modal local validation
       times_required: "Add at least one time of day.",

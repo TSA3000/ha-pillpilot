@@ -14,8 +14,8 @@ __pycache__/
 *~
 
 # Local-only docs / planning that shouldn't ship publicly
-ROADMAP.md
 *.local.md
+ROADMAP.md
 
 # Build outputs
 *.zip

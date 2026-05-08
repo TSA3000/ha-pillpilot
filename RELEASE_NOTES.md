@@ -1,3 +1,21 @@
+# v0.1.5-beta6
+
+> Pre-release. HACS users on the stable channel won't see this update — only those with "show beta versions" enabled.
+
+Validation hardening across both forms (HA Settings reconfigure + in-panel modal). Mostly defensive — the existing UI already constrained input — but the validator now rejects malformed data consistently regardless of where it came from.
+
+## Fixes
+
+- **Frequency must be daily, weekly, or monthly.** Other values (typos, hostile WS input) are rejected with a friendly error.
+- **Weekday list is range-checked.** Values outside 0–6 (Monday=0 through Sunday=6) no longer slip through.
+- **Time strings are validated against HH:MM and normalized.** `9:00` is accepted but stored as `09:00`. Out-of-range hours like `25:00` and minutes like `07:60` are rejected.
+- **ATC code, NPL ID, and Varunummer are trimmed.** Leading/trailing whitespace is stripped before save, so `"Levaxin "` and `"Levaxin"` are treated as the same medicine. Whitespace-only values collapse to empty.
+- **Panel re-renders correctly when you change drug type or ATC code.** Previously those edits could be missed by the change-detection signature; now they always trigger a refresh.
+
+## Internal
+
+- Added `_normalize_times` and `_strip_or_none` helpers shared by both validators — first step toward removing the longstanding validator duplication. Translations for the new error keys (`frequency_invalid`, `days_range`, `times_invalid`) added for English and Swedish.
+
 # v0.1.5-beta5
 
 > Pre-release. HACS users on the stable channel won't see this update — only those with "show beta versions" enabled.

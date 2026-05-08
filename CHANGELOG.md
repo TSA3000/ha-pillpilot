@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.5-beta6] — 2026-05-08
+
+- Fix: Frequency must now be one of `daily`, `weekly`, `monthly` — invalid values are rejected with a friendly error instead of silently accepted.
+- Fix: Weekday list is now range-checked. Values outside 0–6 (Mon=0 through Sun=6) are rejected.
+- Fix: Time strings must match HH:MM format and are normalized — single-digit hours like `9:00` are accepted and stored as `09:00` for consistency.
+- Fix: Optional drug fields (ATC code, NPL ID, Varunummer) are now stripped of leading/trailing whitespace before storage. `"Levaxin "` and `"Levaxin"` no longer appear as duplicate medicines.
+- Fix: Panel re-render signature now includes drug-level fields (medicine type, ATC code) — edits to those fields trigger the panel to update without needing a manual refresh.
+- New translation keys: `frequency_invalid`, `days_range`, `times_invalid` (en + sv).
+- Internal: Added `_normalize_times` and `_strip_or_none` helpers shared by both validators — small step toward removing the validator duplication.
+
 ## [0.1.5-beta5] — 2026-05-08
 
 - UX: Reminder-window field in the panel's prescription sub-modal now matches HA Settings — paired slider + editable number input, both synced. Drag the slider for quick adjustment or tap the number to type a precise value.

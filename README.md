@@ -160,6 +160,14 @@ custom_components/pillpilot/
 2. For each new entry: include the brand name as `name`, add common misspellings/generic name/alt brands as `aliases` (these power the fuzzy match in the dropdown), include the ATC code only if you're confident (verify against [Sök VARA](https://sokvara.ehalsomyndigheten.se) or [FASS](https://www.fass.se)), and use Swedish substance names where they differ from the brand.
 3. Open a PR. Once merged, existing users can pull the new entries via the integration's **Reconfigure → Refresh medicine list now** without waiting for a HACS release.
 
+## Known issues
+
+Bugs we know about and plan to fix. If you hit something not listed here, please [open an issue](https://github.com/TSA3000/ha-pillpilot/issues).
+
+- **A prescription with no scheduled times can still be saved.** It won't fire any reminders. Workaround: always set at least one time before saving.
+- **The Add/Edit modal doesn't close on Escape**, and the backdrop is still clickable while a save is in progress. You may need to wait a moment after clicking Save before the modal closes on its own.
+- **In multi-user Home Assistant setups, non-admin users can read and modify the medicine list** via the WebSocket API. Single-user installs are unaffected. If you share your HA install with others and need stricter access control, hold off on relying on PillPilot for now.
+
 ## Known limitations
 
 - Edit button on medicine cards goes to the integration page, not the subentry's reconfigure dialog directly.
