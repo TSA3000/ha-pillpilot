@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.5-beta3] — 2026-05-08
+
+- Fix: `validate_medicine_input_multi` no longer crashes on malformed `days_of_month` or `days` lists. Hostile or buggy WS input (e.g. `["abc"]`, `["Mon"]`, `[None]`) now surfaces a friendly `days_of_month_invalid` / `days_invalid` error in the modal banner instead of raising an unhandled `ValueError`/`TypeError` in the WS handler. New translation key `days_invalid` (en/sv).
+
 ## [0.1.5-beta2] — 2026-05-08
 
 - New: ⚙ button in the panel header next to "+ Add medicine" — opens the integration's config page in HA Settings without leaving the SPA.

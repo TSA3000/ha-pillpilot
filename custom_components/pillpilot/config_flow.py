@@ -411,9 +411,14 @@ def validate_medicine_input_multi(
                 except ValueError:
                     p_errors[CONF_MED_DAYS_OF_MONTH] = "days_of_month_invalid"
         else:
-            doms = sorted({int(d) for d in doms_raw})
-            if any(d < 1 or d > 31 for d in doms):
-                p_errors[CONF_MED_DAYS_OF_MONTH] = "days_of_month_range"
+            # List branch (panel sends an array). Same crash surface as
+            # the string branch above — non-numeric entries explode.
+            try:
+                doms = sorted({int(d) for d in doms_raw})
+                if any(d < 1 or d > 31 for d in doms):
+                    p_errors[CONF_MED_DAYS_OF_MONTH] = "days_of_month_range"
+            except (TypeError, ValueError):
+                p_errors[CONF_MED_DAYS_OF_MONTH] = "days_of_month_invalid"
 
         if (
             freq == FREQ_MONTHLY
@@ -445,9 +450,16 @@ def validate_medicine_input_multi(
         else:
             times = [str(t).strip() for t in times_raw if str(t).strip()]
 
-        # Parse days — accept list of ints or list of strings.
+        # Parse days — accept list of ints or list of strings. Non-numeric
+        # entries (e.g. WS client sends ["Mon"] instead of [1]) would
+        # crash int() — surface as days_invalid instead.
         days_raw = p.get(CONF_MED_DAYS) or []
-        days = [int(d) for d in days_raw]
+        try:
+            days = [int(d) for d in days_raw]
+        except (TypeError, ValueError):
+            p_errors[CONF_MED_DAYS] = "days_invalid"
+            prescription_errors.append(p_errors)
+            continue
 
         validated_prescriptions.append({
             CONF_PRESCRIPTION_ID: p.get(CONF_PRESCRIPTION_ID) or uuid.uuid4().hex,

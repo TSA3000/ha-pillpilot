@@ -1,3 +1,14 @@
+# v0.1.5-beta3
+
+> Pre-release. HACS users on the stable channel won't see this update — only those with "show beta versions" enabled.
+
+Hardens the multi-prescription validator against malformed list inputs.
+
+## Fixes
+
+- **No more crashes on bad list input.** Previously, sending `days_of_month: ["abc"]` or `days: ["Mon", "Tue"]` from the WS client (or any future bug in the panel's draft serializer) caused an unhandled `ValueError` in the WS handler. The validator now catches both `ValueError` and `TypeError` on the list-branch parsing for both fields and surfaces a friendly error in the modal banner. Also handles `None` and other non-numeric junk gracefully.
+- **New error key:** `days_invalid` for the weekday-list parsing path. Translations added for English and Swedish.
+
 # v0.1.5-beta2
 
 > Pre-release. HACS users on the stable channel won't see this update — only those with "show beta versions" enabled.

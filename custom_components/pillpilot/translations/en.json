@@ -86,6 +86,7 @@
         "days_of_month_invalid": "Days of month must be a comma-separated list of integers (e.g. '1, 15').",
         "days_of_month_range": "Days of month must each be between 1 and 31.",
         "days_of_month_required": "Monthly frequency requires at least one day of the month.",
+        "days_invalid": "Weekdays must be a list of integers 0-6 (Monday=0 through Sunday=6).",
         "invalid_number": "Enter a valid number.",
         "invalid_type": "Type must be Pill, Drops, or Injection.",
         "name_required": "Medicine name is required."
