@@ -193,6 +193,17 @@ def validate_medicine_input(
     # Build the prescription dict. The id is generated fresh — caller's
     # merge logic decides whether to overlay this onto an existing
     # prescription (preserving its id) or treat it as a new one.
+    # Parse days — the SelectSelector pre-validates against WEEKDAYS so
+    # in normal HA Settings usage the values are always valid integer
+    # strings. But the validator runs against arbitrary dicts (also called
+    # from the WS create path's reconfigure handler), so harden against
+    # non-numeric / None input the same way validate_medicine_input_multi
+    # does. Surfaces days_invalid on failure instead of crashing.
+    try:
+        days_parsed = [int(d) for d in user_input.get(CONF_MED_DAYS, [])]
+    except (TypeError, ValueError):
+        return None, {CONF_MED_DAYS: "days_invalid"}
+
     prescription = {
         CONF_PRESCRIPTION_ID: uuid.uuid4().hex,
         CONF_MED_PERSON: person_id,
@@ -206,9 +217,7 @@ def validate_medicine_input(
             for t in user_input[CONF_MED_TIMES].split(",")
             if t.strip()
         ],
-        CONF_MED_DAYS: [
-            int(d) for d in user_input.get(CONF_MED_DAYS, [])
-        ],
+        CONF_MED_DAYS: days_parsed,
         CONF_MED_DAYS_OF_MONTH: doms,
         CONF_MED_REMIND_WINDOW: int(user_input[CONF_MED_REMIND_WINDOW]),
     }

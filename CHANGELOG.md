@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.5-beta5] — 2026-05-08
+
+- UX: Reminder-window field in the panel's prescription sub-modal now matches HA Settings — paired slider + editable number input, both synced. Drag the slider for quick adjustment or tap the number to type a precise value.
+- Internal: Single-prescription validator hardened against malformed `days` list input — now returns `days_invalid` instead of crashing on non-numeric or `None` entries, matching the multi-prescription validator's behavior.
+
 ## [0.1.5-beta4] — 2026-05-08
 
 - Fix: `validate_medicine_input_multi` now detects when two prescriptions in the form share an id and flags both rows with `duplicate_prescription_id`. Previously the merge would silently overwrite one with the other and the user wouldn't know data was lost. Translation key added (en/sv).

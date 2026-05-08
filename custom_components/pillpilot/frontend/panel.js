@@ -790,6 +790,32 @@ const STYLES = `
     outline: 2px solid var(--primary-color, #03a9f4);
     outline-offset: -1px;
   }
+  .slider-with-input {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .slider-with-input .form-slider {
+    /* Take all the leftover horizontal space; mobile-friendly drag
+       target. The native range input picks up HA's accent color from
+       --primary-color via accent-color. */
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--primary-color, #03a9f4);
+    cursor: pointer;
+  }
+  .slider-with-input .slider-number {
+    /* Compact number input on the right — wide enough for 3 digits
+       plus the spinner controls. Tap target stays comfortable on
+       mobile because of inherent input height (~36px). */
+    flex: 0 0 70px;
+    text-align: right;
+  }
+  .slider-with-input .slider-unit {
+    flex: 0 0 auto;
+    color: var(--secondary-text-color, #727272);
+    font-size: 13px;
+  }
   .field-error {
     font-size: 12px;
     color: var(--error-color, #f44336);
@@ -2671,8 +2697,17 @@ class PillPilotPanel extends HTMLElement {
                 ${fieldError("days_of_month")}
               </label>` : ""}
               <label class="form-field">
-                <span class="form-label">Reminder window (minutes)</span>
-                <input type="number" min="0" step="1" class="form-input" data-sub-field="remind_window" value="${escapeHtml(draft.remind_window)}">
+                <span class="form-label">Reminder window</span>
+                <div class="slider-with-input">
+                  <input type="range" min="5" max="240" step="5" class="form-slider"
+                         data-sub-field="remind_window"
+                         value="${escapeHtml(draft.remind_window)}"
+                         aria-label="Reminder window in minutes">
+                  <input type="number" min="5" max="240" step="5" class="form-input slider-number"
+                         data-sub-field="remind_window"
+                         value="${escapeHtml(draft.remind_window)}">
+                  <span class="slider-unit">min</span>
+                </div>
                 <span class="form-hint">How long after the scheduled time the dose stays in "due" state before it's marked missed.</span>
               </label>
             </div>
@@ -2886,7 +2921,10 @@ class PillPilotPanel extends HTMLElement {
     });
 
     // Sub-modal field inputs — update _personSubModal.draft. Frequency
-    // changes re-render so the conditional sections show/hide.
+    // changes re-render so the conditional sections show/hide. Multiple
+    // controls can share a data-sub-field (e.g. remind_window has both
+    // a slider and a number input bound to the same value); dragging
+    // one updates the other so they stay in visual sync.
     root.querySelectorAll("[data-sub-field]").forEach((el) => {
       const field = el.dataset.subField;
       const eventName = el.tagName === "SELECT" || el.type === "checkbox" ? "change" : "input";
@@ -2901,7 +2939,18 @@ class PillPilotPanel extends HTMLElement {
             draft.daysOfWeek.delete(idx);
           }
         } else {
-          draft[field] = e.currentTarget.value;
+          const value = e.currentTarget.value;
+          draft[field] = value;
+          // Push the new value to any sibling control bound to the
+          // same field. Skips identical-value writes so we don't churn
+          // the cursor in a number input while typing.
+          root
+            .querySelectorAll(`[data-sub-field="${field}"]`)
+            .forEach((other) => {
+              if (other !== e.currentTarget && other.value !== value) {
+                other.value = value;
+              }
+            });
           if (field === "frequency") {
             this._render();
           }

@@ -1,3 +1,17 @@
+# v0.1.5-beta5
+
+> Pre-release. HACS users on the stable channel won't see this update — only those with "show beta versions" enabled.
+
+Brings the panel and HA Settings forms into sync.
+
+## UX
+
+- **Reminder-window field is now consistent across both forms.** The panel's prescription sub-modal previously had a plain number input while HA Settings (after beta2) had a slider with a linked editable number. The panel now matches: paired slider + number, both synced. Drag the slider for quick adjustment, tap the number to type a precise value. Range 5–240 minutes, step 5.
+
+## Internal
+
+- Single-prescription validator now wraps the `days` list parse in try/except, surfacing `days_invalid` on malformed input instead of crashing. Same hardening as the multi-prescription validator got in beta3. In normal HA Settings usage the form's selector pre-validates, so the crash surface was narrow, but defensive consistency matters.
+
 # v0.1.5-beta4
 
 > Pre-release. HACS users on the stable channel won't see this update — only those with "show beta versions" enabled.
