@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.5-beta4] — 2026-05-08
+
+- Fix: `validate_medicine_input_multi` now detects when two prescriptions in the form share an id and flags both rows with `duplicate_prescription_id`. Previously the merge would silently overwrite one with the other and the user wouldn't know data was lost. Translation key added (en/sv).
+- Internal: Removed dead `form_ids_seen` set in `merge_v2_prescriptions_into_existing` — populated but never read.
+
 ## [0.1.5-beta3] — 2026-05-08
 
 - Fix: `validate_medicine_input_multi` no longer crashes on malformed `days_of_month` or `days` lists. Hostile or buggy WS input (e.g. `["abc"]`, `["Mon"]`, `[None]`) now surfaces a friendly `days_of_month_invalid` / `days_invalid` error in the modal banner instead of raising an unhandled `ValueError`/`TypeError` in the WS handler. New translation key `days_invalid` (en/sv).

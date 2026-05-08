@@ -2700,6 +2700,7 @@ class PillPilotPanel extends HTMLElement {
       days_of_month_invalid: "Couldn't parse days of month — use comma-separated numbers.",
       days_of_month_required: "Monthly schedule needs at least one day of the month.",
       days_invalid: "Couldn't parse weekdays — expected 0–6 (Mon–Sun).",
+      duplicate_prescription_id: "This prescription has the same id as another. Each must be unique.",
       invalid_number: "Enter a valid number.",
       // Sub-modal local validation
       times_required: "Add at least one time of day.",

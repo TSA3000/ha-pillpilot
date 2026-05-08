@@ -304,7 +304,6 @@ def merge_v2_prescriptions_into_existing(
         p[CONF_PRESCRIPTION_ID]: p
         for p in (existing.get(CONF_MED_PRESCRIPTIONS) or [])
     }
-    form_ids_seen: set[str] = set()
     merged_prescriptions: list[dict[str, Any]] = []
 
     for form_p in form_prescriptions:
@@ -318,7 +317,6 @@ def merge_v2_prescriptions_into_existing(
                 **form_p,
                 CONF_PRESCRIPTION_ID: pid,
             }
-            form_ids_seen.add(pid)
         else:
             # Add path: form sent a prescription not in existing. Stamp a
             # fresh id if the form didn't provide one.
@@ -327,7 +325,6 @@ def merge_v2_prescriptions_into_existing(
                 **form_p,
                 CONF_PRESCRIPTION_ID: new_pid,
             }
-            form_ids_seen.add(new_pid)
         merged_prescriptions.append(merged)
 
     # Anything in existing whose id wasn't in the form is implicitly
@@ -391,9 +388,35 @@ def validate_medicine_input_multi(
         base_error = "at_least_one_prescription"
 
     # ---- per-prescription validation ----
+    # Pre-pass: detect duplicate prescription ids. If the form sends two
+    # rows with the same id, the merge would silently update one and
+    # then update it again — second one wins, first one's data lost
+    # without warning. Flag every occurrence so the user sees both
+    # offending rows in the modal.
+    #
+    # Empty / missing ids are not duplicates of each other — those rows
+    # are new prescriptions that will each be assigned a fresh uuid by
+    # the merge, so multiple null ids are fine.
+    seen_ids: set[str] = set()
+    duplicate_ids: set[str] = set()
+    for p in prescriptions:
+        pid = p.get(CONF_PRESCRIPTION_ID)
+        if pid:
+            if pid in seen_ids:
+                duplicate_ids.add(pid)
+            seen_ids.add(pid)
+
     validated_prescriptions: list[dict[str, Any]] = []
     for p in prescriptions:
         p_errors: dict[str, str] = {}
+
+        # Flag if this row's id collides with another row's id. Other
+        # field validation continues so the user sees all problems at
+        # once rather than discovering the duplicate, fixing it, then
+        # discovering more errors on resave.
+        pid = p.get(CONF_PRESCRIPTION_ID)
+        if pid and pid in duplicate_ids:
+            p_errors[CONF_PRESCRIPTION_ID] = "duplicate_prescription_id"
 
         # Parse days_of_month — accept either comma-string or list.
         freq = p.get(CONF_MED_FREQUENCY) or FREQ_DAILY

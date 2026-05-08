@@ -87,6 +87,7 @@
         "days_of_month_range": "Månadens dagar måste vara mellan 1 och 31.",
         "days_of_month_required": "Månadsschema kräver minst en dag i månaden.",
         "days_invalid": "Veckodagar måste vara heltal 0–6 (måndag=0 till söndag=6).",
+        "duplicate_prescription_id": "Två recept har samma id. Varje recept måste ha ett unikt id.",
         "invalid_number": "Ange ett giltigt nummer.",
         "invalid_type": "Typ måste vara Tablett, Droppar eller Injektion.",
         "name_required": "Läkemedelsnamn krävs."

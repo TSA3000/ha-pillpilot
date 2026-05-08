@@ -1,3 +1,14 @@
+# v0.1.5-beta4
+
+> Pre-release. HACS users on the stable channel won't see this update — only those with "show beta versions" enabled.
+
+Validator hardening and a small dead-code cleanup.
+
+## Fixes
+
+- **Duplicate prescription ids no longer cause silent data loss.** If the panel ever sends two prescriptions with the same id (whether through a panel bug or hostile WS input), the validator now flags both offending rows in the modal banner with a clear "Each prescription must have a unique id" message. Previously the merge would silently let the second overwrite the first.
+- **Removed a dead `form_ids_seen` set.** Was populated in two branches of `merge_v2_prescriptions_into_existing` but never read. Pure dead code from an earlier iteration. Cleanup, not behavior change.
+
 # v0.1.5-beta3
 
 > Pre-release. HACS users on the stable channel won't see this update — only those with "show beta versions" enabled.
@@ -27,7 +38,7 @@ Two small UX additions on top of beta1.
 
 > Pre-release. HACS users on the stable channel won't see this update — only those with "show beta versions" enabled. Open the integration in HACS → three dots → Redownload → enable beta to install.
 
-Internal cleanup. No user-visible behavior change except #5.
+Internal cleanup. One small visible change: prescription summary in the Add/Edit modal now shows the right unit (drop / drops, injection / injections) instead of always saying "pill".
 
 ## Fixes
 
