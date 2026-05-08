@@ -20,7 +20,7 @@
 //   <Person>'s medicines · N
 //   ┌── card grid ──┐
 //
-// Per-slot logic (v0.2.4):
+// Per-slot logic:
 //   The sensor exposes `today_doses` — an array of per-slot dicts with
 //   {scheduled_at, time, status, action_at}. Each row reads from this
 //   instead of guessing based on `last_taken_at`. status drives whether
@@ -35,6 +35,14 @@ const STATE_UPCOMING = "upcoming";
 const STATE_TAKEN = "taken";
 const STATE_MISSED = "missed";
 const STATE_SKIPPED = "skipped";
+
+// Medicine type IDs. Wire format — these strings ARE the identifiers
+// stored in subentry data and exposed on sensor attributes. Mirrors
+// MED_TYPE_PILL / MED_TYPE_DROPS / MED_TYPE_INJECTION in const.py.
+// If you change a value here, change const.py to match.
+const MED_TYPE_PILL = "pill";
+const MED_TYPE_DROPS = "drops";
+const MED_TYPE_INJECTION = "injection";
 
 const STATE_LABELS = {
   [STATE_DUE]: { text: "due now", kind: "warning" },
@@ -897,22 +905,22 @@ class PillPilotPanel extends HTMLElement {
       this._hass = null;
       this._lastSig = null;
       this._watchdogInterval = null;
-      // v0.2.17: per-person collapse state, persisted in localStorage.
+      // per-person collapse state, persisted in localStorage.
       // Shape: { "person.alice": "expanded", "__household__": "collapsed", ... }
       // Missing keys fall back to the smart default (expanded if any
       // non-taken dose, collapsed if all taken).
       this._collapseState = this._loadCollapseState();
-      // v0.2.17: in-memory record of the most recent bulk action per
+      // in-memory record of the most recent bulk action per
       // person, for the "Undo last action" kebab menu item. Each entry
       // is a list of {medicineId, scheduledAt} pairs that the bulk
       // call sent to mark_taken. Reset to null after Undo runs. NOT
       // persisted — page reload clears it (acceptable per spec).
       this._lastActionMap = {};
-      // v0.2.18: cards-vs-list view mode for the medicines section,
+      // cards-vs-list view mode for the medicines section,
       // persisted per-browser. Default = "cards" matching the
       // pre-v0.2.18 look. Set to "list" via the in-section toggle.
       this._medsView = this._loadMedsView();
-      // v0.2.20: medicines sort order, persisted per-browser.
+      // medicines sort order, persisted per-browser.
       // _sortBy ∈ {"name", "status", "next", "last_taken"} —
       // _sortDir ∈ {"asc", "desc"}. Pre-v0.2.20 the panel rendered
       // medicines in whatever order Object.values(hass.states) returned,
@@ -922,7 +930,7 @@ class PillPilotPanel extends HTMLElement {
       const sortLoaded = this._loadSortState();
       this._sortBy = sortLoaded.by;
       this._sortDir = sortLoaded.dir;
-      // v0.2.21: in-panel edit modal state. Null = closed; any other
+      // in-panel edit modal state. Null = closed; any other
       // value = the medicine_id being edited. _editFormDraft holds the
       // current form values as the user types so we can re-render the
       // modal without losing input. _editFormErrors maps field names
@@ -1016,7 +1024,7 @@ class PillPilotPanel extends HTMLElement {
     return hasNonTaken;
   }
 
-  // v0.2.18: cards-vs-list view mode for the bottom medicines section.
+  // cards-vs-list view mode for the bottom medicines section.
   // Persisted per-browser; falls back to "cards" (the pre-v0.2.18
   // default) if localStorage isn't usable or contains an unknown value.
   _loadMedsView() {
@@ -1045,7 +1053,7 @@ class PillPilotPanel extends HTMLElement {
     this._render();
   }
 
-  // v0.2.20: sort state load/save + deterministic sort helper.
+  // sort state load/save + deterministic sort helper.
   // Pre-v0.2.20 the medicines section rendered in whatever order
   // hass.states happened to be in — JS Object key iteration preserves
   // insertion order but HA's state store doesn't guarantee insertion
@@ -1433,7 +1441,7 @@ class PillPilotPanel extends HTMLElement {
     );
   }
 
-  // v0.2.17: per-person grouping for the new collapsible Today's
+  // per-person grouping for the new collapsible Today's
   // doses sections. Returns groups in stable order — named persons
   // alphabetically first, "Household" last (and only when it has any
   // doses; otherwise omitted entirely).
@@ -1540,7 +1548,7 @@ class PillPilotPanel extends HTMLElement {
     });
   }
 
-  // v0.2.19: HA locale-aware HH:MM time formatter.
+  // HA locale-aware HH:MM time formatter.
   // Pre-v0.2.19 we displayed "HH:MM" raw, which meant 24h regardless
   // of the user's HA frontend Time format setting (Profile → Time
   // format → 12 hour / 24 hour / Auto). This helper reads
@@ -1586,11 +1594,11 @@ class PillPilotPanel extends HTMLElement {
     return undefined;
   }
 
-  // v0.2.19: respect the medicine's actual frequency. Pre-v0.2.19 we
+  // respect the medicine's actual frequency. Pre-v0.2.19 we
   // always rendered "Daily · ..." which mislabeled weekly and monthly
   // entries (e.g. an Ozempic prescribed Sunday-only would show as
   // Daily). The sensor now exposes ``frequency`` and
-  // ``scheduled_days_of_month`` (v0.2.19); we read them here.
+  // ``scheduled_days_of_month``; we read them here.
   _formatSchedule(attrs) {
     const times = attrs.scheduled_times || [];
     if (times.length === 0) return "—";
@@ -1647,7 +1655,7 @@ class PillPilotPanel extends HTMLElement {
     this._hass.callService("pillpilot", "skip", data);
   }
 
-  // v0.2.17: per-dose undo (hover on green Taken badge → button)
+  // per-dose undo (hover on green Taken badge → button)
   // and per-person bulk undo (kebab menu → Undo last action).
   // Both call the new pillpilot.unmark_taken service backed by
   // MedicineCoordinator.async_unmark_taken.
@@ -1756,7 +1764,7 @@ class PillPilotPanel extends HTMLElement {
     window.dispatchEvent(new CustomEvent("location-changed"));
   }
 
-  // v0.2.21: open the in-panel edit modal for a medicine.
+  // open the in-panel edit modal for a medicine.
   // Pre-v0.2.21 this navigated to the HA Settings integration page,
   // forcing the user to find the row and click Reconfigure — annoying
   // for everyday changes. The new flow: click Edit → modal opens
@@ -1948,7 +1956,7 @@ class PillPilotPanel extends HTMLElement {
     return {
       drug: {
         name: a.medicine_name || "",
-        type: a.med_type || "pill",
+        type: a.med_type || MED_TYPE_PILL,
         notes: a.notes || "",
         atc_code: a.atc_code || "",
         npl_id: a.npl_id || "",
@@ -1991,7 +1999,7 @@ class PillPilotPanel extends HTMLElement {
     return {
       drug: {
         name: "",
-        type: "pill",
+        type: MED_TYPE_PILL,
         notes: "",
         atc_code: "",
         npl_id: "",
@@ -2361,9 +2369,9 @@ class PillPilotPanel extends HTMLElement {
       .join("");
 
     const typeOptions = [
-      ["pill", "Pill"],
-      ["injection", "Injection"],
-      ["drops", "Drops"],
+      [MED_TYPE_PILL, "Pill"],
+      [MED_TYPE_INJECTION, "Injection"],
+      [MED_TYPE_DROPS, "Drops"],
     ]
       .map(
         ([v, label]) =>
@@ -2465,9 +2473,15 @@ class PillPilotPanel extends HTMLElement {
     const total = !Number.isNaN(count) && !Number.isNaN(strength)
       ? count * strength
       : null;
-    const unit = (p.frequency === "drops") ? "drop" : "pill";
-    // Don't try to be clever about unit pluralization — just use the
-    // generic "× N mg = M mg" pattern that matches Dose.formatted().
+    // Unit label derives from the drug's TYPE, not the prescription's
+    // frequency. (frequency is daily/weekly/monthly — never matches a
+    // type string. The previous code always returned "pill" by accident.)
+    const drugType =
+      (this._editFormDraft && this._editFormDraft.drug && this._editFormDraft.drug.type) ||
+      MED_TYPE_PILL;
+    const unit = drugType === MED_TYPE_INJECTION ? "injection"
+               : drugType === MED_TYPE_DROPS     ? "drop"
+               : "pill";
     let dosePart;
     if (total != null) {
       const countLabel = (count === 1 ? `${count} ${unit}` : `${count} ${unit}s`);
@@ -2886,7 +2900,7 @@ class PillPilotPanel extends HTMLElement {
     `;
   }
 
-  // v0.2.17: Today's doses is now a card containing one collapsible
+  // Today's doses is now a card containing one collapsible
   // section per person (and one for "Household" doses, if any).
   // Each section has its own [Take all] [Take due] [⋮] action buttons
   // scoped to that person's doses only — no global bulk action header.
@@ -2986,7 +3000,7 @@ class PillPilotPanel extends HTMLElement {
   _renderDoseRow(d) {
     const personLabel = d.personName ? escapeHtml(d.personName) : "Household";
     const actionsHtml = this._renderRowActions(d);
-    // v0.2.19: respect HA's user Time format preference. Previously
+    // respect HA's user Time format preference. Previously
     // d.time was rendered raw (always 24h "HH:MM" from the sensor).
     const timeStr = this._formatTime(d.time);
     return `
@@ -3007,7 +3021,7 @@ class PillPilotPanel extends HTMLElement {
       const at = this._formatActionTime(d.actionAt);
       const sched = escapeHtml(d.scheduledAt || "");
       const medId = escapeHtml(d.medicineId);
-      // v0.2.17: hover-to-undo. The wrapper holds the green Taken
+      // hover-to-undo. The wrapper holds the green Taken
       // badge and a hidden red Undo button at the same position;
       // hovering swaps them via CSS. Click on the Undo button fires
       // pillpilot.unmark_taken for this exact slot.
@@ -3036,7 +3050,7 @@ class PillPilotPanel extends HTMLElement {
   }
 
   _renderPersonSection(group) {
-    // v0.2.18: header has a Cards / List toggle. The toggle is global
+    // header has a Cards / List toggle. The toggle is global
     // (controls _medsView for all person sections), but the button
     // lives in each section header so the user always has it in reach
     // without scrolling. Active mode is highlighted; clicking the
@@ -3076,7 +3090,7 @@ class PillPilotPanel extends HTMLElement {
     `;
   }
 
-  // v0.2.20: card-view sort dropdown. Each <option> encodes both the
+  // card-view sort dropdown. Each <option> encodes both the
   // column AND the direction in a single value string ("name:asc",
   // "last_taken:desc"). That keeps it one control instead of two,
   // and the visible label spells out the direction so it's obvious.
@@ -3095,7 +3109,7 @@ class PillPilotPanel extends HTMLElement {
     `;
   }
 
-  // v0.2.20: list-view sortable column headers. Three columns are
+  // list-view sortable column headers. Three columns are
   // sortable (Name, Schedule, Last taken); Status and Dose render as
   // static labels — Status sorting is available via the dropdown if
   // someone really wants it, and Dose has no meaningful natural
@@ -3197,7 +3211,7 @@ class PillPilotPanel extends HTMLElement {
         this._skip(t.dataset.medicineId, t.dataset.scheduledAt);
       });
     });
-    // v0.2.17: per-dose hover-undo button (visible only on hover over
+    // per-dose hover-undo button (visible only on hover over
     // the green Taken badge).
     root.querySelectorAll('[data-action="undo-dose"]').forEach((btn) => {
       btn.addEventListener("click", (e) => {
@@ -3207,14 +3221,14 @@ class PillPilotPanel extends HTMLElement {
         this._unmarkTaken(t.dataset.medicineId, t.dataset.scheduledAt);
       });
     });
-    // v0.2.17: per-person collapsible header toggle.
+    // per-person collapsible header toggle.
     root.querySelectorAll('[data-action="toggle-person"]').forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         this._togglePersonCollapse(e.currentTarget.dataset.personKey);
       });
     });
-    // v0.2.17: per-person bulk actions.
+    // per-person bulk actions.
     root.querySelectorAll('[data-action="take-all-person"]').forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
@@ -3265,7 +3279,7 @@ class PillPilotPanel extends HTMLElement {
         this._editMedicine(e.currentTarget.dataset.medicineId);
       });
     });
-    // v0.2.18: Cards / List view toggle in each person-section header.
+    // Cards / List view toggle in each person-section header.
     // Global mode — clicking either button anywhere flips _medsView for
     // every person section.
     root.querySelectorAll('[data-action="set-meds-view"]').forEach((btn) => {
@@ -3274,13 +3288,13 @@ class PillPilotPanel extends HTMLElement {
         this._setMedsView(e.currentTarget.dataset.view);
       });
     });
-    // v0.2.20: card-view sort dropdown. Value is "by:dir".
+    // card-view sort dropdown. Value is "by:dir".
     root.querySelectorAll('[data-action="sort-set"]').forEach((sel) => {
       sel.addEventListener("change", (e) => {
         this._setSort(e.currentTarget.value);
       });
     });
-    // v0.2.20: list-view sortable column headers. Click toggles
+    // list-view sortable column headers. Click toggles
     // direction on the same column or switches to a new column at asc.
     root.querySelectorAll('[data-action="sort-toggle"]').forEach((btn) => {
       btn.addEventListener("click", (e) => {

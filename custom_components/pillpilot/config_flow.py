@@ -88,7 +88,7 @@ from .medicines import (
 
 
 # ---------------------------------------------------------------------------
-# Validation helper (v0.2.21)
+# Validation helper
 # ---------------------------------------------------------------------------
 #
 # Pre-v0.2.21 the form validation lived only inside the config flow's
@@ -160,7 +160,7 @@ def validate_medicine_input(
         return None, {CONF_MED_UNIT_COUNT: "invalid_number"}
     dose_text = dose.formatted()
 
-    # v0.2.15: autocomplete auto-fill. If the user picked a name from
+    # autocomplete auto-fill. If the user picked a name from
     # the dropdown (vs typed a custom value), look it up in the
     # medicines DB and pre-populate ATC + notes if those fields are
     # empty. Free-text typed values that aren't in the list just pass
@@ -182,7 +182,7 @@ def validate_medicine_input(
     else:
         notes_final = user_notes
 
-    # v0.2.24: build a v2-shaped medicine — drug identity at top level,
+    # build a v2-shaped medicine — drug identity at top level,
     # the form's single set of dose+schedule fields wrapped in a
     # one-element prescriptions list. Caller (the WS command and the
     # config flow finalize step) merges this into the existing subentry
@@ -296,10 +296,13 @@ def merge_v2_prescriptions_into_existing(
     is the list of prescription dicts. ``existing`` is the stored
     medicine subentry data dict.
     """
+    # Every stored prescription has CONF_PRESCRIPTION_ID under the
+    # canonical 0.1.0+ schema (stamped by validate_medicine_input_multi
+    # on save). If somehow one doesn't, we'd rather KeyError loud than
+    # silently drop it from the lookup map.
     existing_by_id = {
-        p.get(CONF_PRESCRIPTION_ID): p
+        p[CONF_PRESCRIPTION_ID]: p
         for p in (existing.get(CONF_MED_PRESCRIPTIONS) or [])
-        if p.get(CONF_PRESCRIPTION_ID)
     }
     form_ids_seen: set[str] = set()
     merged_prescriptions: list[dict[str, Any]] = []
@@ -379,8 +382,8 @@ def validate_medicine_input_multi(
     if not name:
         drug_errors[CONF_MED_NAME] = "name_required"
 
-    med_type = drug.get(CONF_MED_TYPE) or "pill"
-    if med_type not in ("pill", "drops", "injection"):
+    med_type = drug.get(CONF_MED_TYPE) or MED_TYPE_PILL
+    if med_type not in (MED_TYPE_PILL, MED_TYPE_DROPS, MED_TYPE_INJECTION):
         drug_errors[CONF_MED_TYPE] = "invalid_type"
 
     # ---- at-least-one-prescription rule ----
@@ -861,7 +864,7 @@ class MedicineSubentryFlow(ConfigSubentryFlow):
             CONF_MED_VARUNUMMER: existing.get(CONF_MED_VARUNUMMER) or "",
             CONF_MED_ATC_CODE: existing.get(CONF_MED_ATC_CODE) or "",
             CONF_MED_PERSON: first.get(CONF_MED_PERSON) or None,
-            # v0.2.26: defaults for NEW medicines changed from
+            # defaults for NEW medicines changed from
             # weekly + 08:00 to daily + 07:00 — matches the most
             # common case (a single morning pill) better, so adding
             # a medicine takes fewer clicks. Existing medicines
@@ -879,7 +882,7 @@ class MedicineSubentryFlow(ConfigSubentryFlow):
         }
 
     def _schema(self, defaults: dict[str, Any]) -> vol.Schema:
-        # v0.2.15: name is a searchable dropdown sourced from
+        # name is a searchable dropdown sourced from
         # medicines_se.json. ``custom_value=True`` means the user can
         # still type a free-text name not in the list. Aliases are
         # baked into each option's label so HA's frontend substring

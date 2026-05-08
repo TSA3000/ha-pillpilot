@@ -205,21 +205,21 @@ class MedicineSensor(CoordinatorEntity[MedicineCoordinator], SensorEntity):
             "dose": s.dose,
             "scheduled_times": s.times,
             "scheduled_days": s.days,
-            # v0.2.19: expose frequency + monthly days so the panel can
+            # expose frequency + monthly days so the panel can
             # render the schedule correctly. Pre-v0.2.19 the panel
             # blindly printed "Daily · ..." for every medicine because
             # those attributes weren't reachable, leading to weekly /
             # monthly entries being mislabeled as daily on their cards.
             "frequency": s.frequency,
             "scheduled_days_of_month": s.days_of_month,
-            # v0.2.21: surfaced so the in-panel edit modal pre-fills the
+            # surfaced so the in-panel edit modal pre-fills the
             # existing value instead of resetting to the default.
             "remind_window_minutes": s.remind_window_minutes,
             "next_dose_at": _iso(s.next_dose_at),
             "last_taken_at": _iso(s.last_taken_at),
             "person_id": s.person_id,         # may be None for household
             "person_name": s.person_name,     # friendly name, or None
-            # Per-slot status for today's doses (added v0.2.4). The
+            # Per-slot status for today's doses. The
             # panel uses this to decide whether each slot's row shows
             # action buttons or a "✓ Taken at HH:MM" label.
             "today_doses": s.today_doses,

@@ -1,3 +1,20 @@
+# v0.1.5-beta1
+
+> Pre-release. HACS users on the stable channel won't see this update — only those with "show beta versions" enabled. Open the integration in HACS → three dots → Redownload → enable beta to install.
+
+Internal cleanup. No user-visible behavior change except #5.
+
+## Fixes
+
+- **Prescription summary in the Edit/Add modal now shows the right unit.** Previously every prescription said `"1 pill × N mg"` regardless of medicine type because the unit-label check read `p.frequency` (which is daily/weekly/monthly) instead of the drug's type. Drops show `"drop"` / `"drops"`, injections show `"injection"` / `"injections"`.
+
+## Internal
+
+- Medicine-type strings are now constants (`MED_TYPE_PILL/DROPS/INJECTION`) in both `const.py` and `panel.js`. Wire format unchanged.
+- Removed `_retitle_medicine_subentries`, a pre-existing migration helper that was a no-op on canonical 0.1.0+ data.
+- Removed a defensive id-presence filter in `merge_v2_prescriptions_into_existing` that's no longer load-bearing now that every stored prescription has an id.
+- Cleaned up 37 mechanical version-history annotations in code comments.
+
 # v0.1.4
 
 ## Fixes

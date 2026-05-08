@@ -70,7 +70,7 @@ _LOGGER = logging.getLogger(__name__)
 class DoseRecord:
     medicine_id: str
     scheduled_for: str
-    # v0.2.24: per-prescription routing. For multi-prescription medicines
+    # per-prescription routing. For multi-prescription medicines
     # we need to know WHICH prescription a record belongs to — Sam and
     # Josef sharing Levaxin both have 8am slots, the record needs to
     # disambiguate. Default None for legacy records loaded from storage

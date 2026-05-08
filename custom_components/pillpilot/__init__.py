@@ -42,7 +42,7 @@ _LOGGER = logging.getLogger(__name__)
 MARK_TAKEN_SCHEMA = vol.Schema(
     {
         vol.Required("medicine_id"): cv.string,
-        # v0.2.24: optional, lets callers pin the action to a specific
+        # optional, lets callers pin the action to a specific
         # prescription for multi-prescription medicines. None / omitted
         # falls back to the closest-by-time prescription resolver.
         vol.Optional("person_id"): vol.Any(cv.string, None),
@@ -101,25 +101,6 @@ def _medicines_from_subentries(entry: ConfigEntry) -> list[dict[str, Any]]:
     return out
 
 
-def _retitle_medicine_subentries(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Ensure every medicine subentry's title is the canonical
-    "name — person" form (or just "name" for household).
-
-    Pre-v0.2.9 subentries were titled with the bare medicine name,
-    making same-name-different-person pairs indistinguishable on the
-    integration card. This migration walks all medicine subentries
-    once on setup and fixes any that don't already match the canonical
-    title. Skips subentries where the title is already correct, so
-    re-runs are no-ops.
-    """
-    for sub in list(entry.subentries.values()):
-        if sub.subentry_type != "medicine":
-            continue
-        new_title = build_subentry_title(hass, dict(sub.data))
-        if new_title != sub.title:
-            hass.config_entries.async_update_subentry(entry, sub, title=new_title)
-
-
 # ---------------------------------------------------------------------------
 # Setup / unload
 # ---------------------------------------------------------------------------
@@ -128,9 +109,6 @@ def _retitle_medicine_subentries(hass: HomeAssistant, entry: ConfigEntry) -> Non
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up PillPilot from a config entry."""
     hass.data.setdefault(DOMAIN, {})
-
-    # Set canonical "name — person" titles on medicine subentries.
-    _retitle_medicine_subentries(hass, entry)
 
     # Medicines list (Swedish meds) is shared
     # across all entries — there's only ever one PillPilot
@@ -391,7 +369,7 @@ def _register_services(hass: HomeAssistant) -> None:
 
 
 # ---------------------------------------------------------------------------
-# WebSocket commands (v0.2.21)
+# WebSocket commands
 # ---------------------------------------------------------------------------
 #
 # The panel pushes medicine edits + new medicine creation back to the

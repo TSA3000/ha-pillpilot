@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.5-beta1] — 2026-05-08
+
+- Fix: prescription summary in the modal now shows the correct unit for drops and injections (was always saying "pill").
+- Internal: medicine-type strings consolidated as constants, dead pre-canonical helpers removed, comment cleanup.
+
 ## [0.1.4] — 2026-05-07
 
 - Fix: Delete medicine now works — corrected the `async_remove_subentry` call signature.
