@@ -18,7 +18,7 @@ Home Assistant integration for medication reminders with a custom side panel for
 
 ## Setup
 
-After install, go to **Settings → Devices & services → PillPilot** card and click **+ Add medicine** for each medicine. Pick from the bundled Swedish medicine list (autocomplete with fuzzy matching on common misspellings and alternate names) or type a name not in the list. Set per-dose count, strength, frequency (daily / weekly / monthly), times, and optionally assign to a person.
+After install, go to **Settings → Devices & services → PillPilot** card and click **+ Add medicine** for each medicine. Pick from the bundled Swedish medicine list (autocomplete with fuzzy matching on common misspellings and alternate names) or type a name not in the list. Set per-dose count, strength, frequency (daily / weekly / monthly / every N days), times, and optionally assign to a person.
 
 Open the side panel from the HA sidebar to see what's due, mark doses taken, undo, snooze, or skip.
 
@@ -53,7 +53,7 @@ The integration only fires events. Build whatever notification flow you want fro
 ### Events fired
 
 | Event | Data |
-|---|---|
+| --- | --- |
 | `pillpilot_dose_due` | `medicine_id`, `medicine_name`, `dose`, `scheduled_for`, `person_id` |
 | `pillpilot_dose_missed` | same shape |
 | `pillpilot_dose_taken` | adds `taken_at` |
@@ -64,9 +64,13 @@ The integration only fires events. Build whatever notification flow you want fro
 
 Two automation blueprints ship in `blueprints/automation/pillpilot/`. Together they cover the complete notification loop: send actionable notifications, handle the button taps. Import both.
 
-[![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FTSA3000%2Fha-pillpilot%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fpillpilot%2Fnotify_dose.yaml) **notify_dose** — sends actionable notifications with `[Take]`, `[Snooze]`, `[Skip]` buttons when a dose is due (and optionally re-pings on `dose_missed`).
+**notify_dose** — sends actionable notifications with `[Take]`, `[Snooze]`, `[Skip]` buttons when a dose is due (and optionally re-pings on `dose_missed`).
 
-[![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FTSA3000%2Fha-pillpilot%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fpillpilot%2Fhandle_actions.yaml) **handle_actions** — listens for `mobile_app_notification_action` events and calls the matching `pillpilot.*` service when the user taps a button.
+[![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FTSA3000%2Fha-pillpilot%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fpillpilot%2Fnotify_dose.yaml)
+
+**handle_actions** — listens for `mobile_app_notification_action` events and calls the matching `pillpilot.*` service when the user taps a button.
+
+[![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FTSA3000%2Fha-pillpilot%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Fpillpilot%2Fhandle_actions.yaml)
 
 Manual import: copy the YAML files into `<config>/blueprints/automation/pillpilot/`, then **Settings → Automations & Scenes → Blueprints**.
 
@@ -121,7 +125,7 @@ Filter by person, medicine, or time of day with a `condition:` block on `trigger
 ## Services
 
 | Service | Purpose |
-|---|---|
+| --- | --- |
 | `pillpilot.mark_taken` | Record a taken dose |
 | `pillpilot.skip` | Skip a scheduled dose |
 | `pillpilot.snooze` | Reschedule a dose for later |
@@ -132,14 +136,14 @@ All take a `medicine_id` (and optional `when` for retroactive marking). See `ser
 
 ## Architecture
 
-```
+```text
 custom_components/pillpilot/
 ├── __init__.py          entry setup, services, hot-reload listener
 ├── const.py             keys, defaults, event names
 ├── config_flow.py       parent flow + medicine subentry flow
 ├── coordinator.py       1-min tick: schedule + dose history
 ├── dose.py              Dose model — count × strength formatting
-├── schedule.py          Schedule model — daily/weekly/monthly recurrence
+├── schedule.py          Schedule model — RRULE-based recurrence (daily / weekly / monthly / every-N-days)
 ├── sensor.py            CoordinatorEntity per medicine
 ├── panel.py             custom side-panel registration
 ├── medicines.py         MedicineDatabase: load list, dropdown builder
