@@ -137,17 +137,25 @@
       },
       "error": {
         "at_least_one_prescription": "Add at least one prescription.",
+        "days_invalid": "Weekdays must be a list of integers 0-6 (Monday=0 through Sunday=6).",
         "days_of_month_invalid": "Days of month must be a comma-separated list of integers (e.g. '1, 15').",
         "days_of_month_range": "Days of month must each be between 1 and 31.",
         "days_of_month_required": "Monthly frequency requires at least one day of the month.",
-        "days_invalid": "Weekdays must be a list of integers 0-6 (Monday=0 through Sunday=6).",
         "days_range": "Weekdays must each be between 0 and 6 (Monday=0 through Sunday=6).",
+        "days_required": "Weekly frequency requires at least one weekday.",
         "duplicate_prescription_id": "Two prescriptions share the same id. Each prescription must have a unique id.",
+        "ends_on_invalid": "End date must be in YYYY-MM-DD format. Leave empty for no end date.",
         "frequency_invalid": "Frequency must be one of: daily, weekly, monthly.",
-        "times_invalid": "Times must be in HH:MM format (e.g. '07:00' or '7:00').",
+        "interval_days_invalid": "Interval must be a whole number.",
+        "interval_days_range": "Interval must be between 2 and 365 days.",
+        "interval_days_required": "Every-N-days frequency requires an interval (2 or more days).",
         "invalid_number": "Enter a valid number.",
         "invalid_type": "Type must be Pill, Drops, or Injection.",
-        "name_required": "Medicine name is required."
+        "name_required": "Medicine name is required.",
+        "times_invalid": "Times must be in HH:MM format (e.g. '07:00' or '7:00').",
+        "times_per_weekday_invalid": "Per-weekday times must be 7 entries (Mon to Sun), each as a comma-separated list of HH:MM times.",
+        "times_per_weekday_length": "Per-weekday times must have exactly 7 entries (one for each weekday Mon to Sun).",
+        "times_per_weekday_time_invalid": "Per-weekday times include a malformed entry. Use HH:MM format (e.g. '07:00')."
       }
     }
   },

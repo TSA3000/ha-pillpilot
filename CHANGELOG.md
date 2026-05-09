@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.0] — 2026-05-09
+
+Promotion of the 0.2.0 beta cycle to stable. Headline changes from 0.1.5:
+
+- **Scheduler engine rewrite.** Storage now holds an RRULE plus a `schedule_type`. Every-N-days schedules survive month boundaries (May 30 → Jun 1 → Jun 3, not "May 30 then resets to Jun 1, Jun 3"). Existing prescriptions are migrated automatically on first start.
+- **Every N days** frequency. Set the interval (2–365). Useful for every-other-day prescriptions and similar rhythms.
+- **End date** field, optional, available for any frequency. Useful for antibiotic courses or other time-limited prescriptions.
+- **Different times per weekday.** Each prescription can specify its own times for each weekday (e.g. Mon-Fri 08:00, Sat-Sun 10:00). Empty rows in this mode mean skip that weekday entirely.
+- **HA Settings form reorganized.** Add medicine / Reconfigure medicine forms now group fields into four collapsible sections (Identity / Drug-database identifiers / Schedule / Per-weekday time overrides) plus a reminder-window field. Optional and advanced sections are collapsed by default.
+- **Panel prescription editor UX.** The schedule block uses a Same-vs-Different-times-per-weekday radio mode picker, and the days-of-week selector uses chip buttons with Every-day / Weekdays / Weekends presets. Switching between times modes is lossless within an edit session.
+- **Validation hardening.** Weekly without selected days now surfaces `days_required` (was missed in earlier validation work). Interval mode requires an interval between 2 and 365. End date requires `YYYY-MM-DD`. Per-weekday times are validated as 7 entries × HH:MM lists.
+- **Internal:** new module-level static name-resolution check in CI catches missing-import bugs before they reach users. New `_flatten_section_input` helper isolates the validator from form-layout concerns. Eight error keys added to `strings.json` to match `translations/en.json` and `translations/sv.json`. Lifecycle log statements in the panel are gated behind a `pillpilot_debug` localStorage flag (default off; enable with `localStorage.setItem("pillpilot_debug", "1")`).
+
+For per-beta detail see the 0.2.0-beta1 through 0.2.0-beta3.6 entries below.
+
 ## [0.2.0-beta3.6] — 2026-05-09
 
 UX: panel weekday selector replaces 7 checkboxes with chip buttons + quick presets.

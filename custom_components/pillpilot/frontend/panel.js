@@ -1040,6 +1040,20 @@ class PillPilotPanel extends HTMLElement {
       this._hass = null;
       this._lastSig = null;
       this._watchdogInterval = null;
+      // Debug logging gate. Default off — keeps the browser console
+      // quiet during normal use. Enable for an install by running
+      // ``localStorage.setItem("pillpilot_debug", "1")`` in the
+      // browser console and reloading; disable with ``removeItem``.
+      // Used by the lifecycle log sites (constructor, connected,
+      // disconnected, render, watchdog, visibilitychange). Warnings
+      // and errors are never gated.
+      this._debug = (() => {
+        try {
+          return localStorage.getItem("pillpilot_debug") === "1";
+        } catch (_) {
+          return false;
+        }
+      })();
       // per-person collapse state, persisted in localStorage.
       // Shape: { "person.alice": "expanded", "__household__": "collapsed", ... }
       // Missing keys fall back to the smart default (expanded if any
@@ -1102,7 +1116,7 @@ class PillPilotPanel extends HTMLElement {
       this._medicinesDbFetchInFlight = false;
       this._onVisibilityChange = () => {
         if (!document.hidden) {
-          console.log("[PillPilot] visibilitychange → re-render");
+          if (this._debug) console.log("[PillPilot] visibilitychange → re-render");
           this._lastSig = null;
           this._render();
         }
@@ -1121,7 +1135,7 @@ class PillPilotPanel extends HTMLElement {
             .forEach((m) => m.classList.remove("open"));
         }
       };
-      console.log("[PillPilot] constructed");
+      if (this._debug) console.log("[PillPilot] constructed");
     } catch (e) {
       console.error("[PillPilot] constructor failed:", e);
     }
@@ -1349,7 +1363,7 @@ class PillPilotPanel extends HTMLElement {
   set panel(_) {}
 
   connectedCallback() {
-    console.log("[PillPilot] connected");
+    if (this._debug) console.log("[PillPilot] connected");
     // Always render something on connect, even without hass. The element
     // can be mounted before HA pushes its first state — without this,
     // the user sees a blank panel until that first push lands.
@@ -1360,7 +1374,7 @@ class PillPilotPanel extends HTMLElement {
     // benefits from being kept visible.
     this._watchdogInterval = setInterval(() => {
       if (!this._hasRenderedContent()) {
-        console.log("[PillPilot] watchdog: content missing → re-render");
+        if (this._debug) console.log("[PillPilot] watchdog: content missing → re-render");
         this._lastSig = null;
         this._render();
       }
@@ -1371,7 +1385,7 @@ class PillPilotPanel extends HTMLElement {
   }
 
   disconnectedCallback() {
-    console.log("[PillPilot] disconnected");
+    if (this._debug) console.log("[PillPilot] disconnected");
     if (this._watchdogInterval) {
       clearInterval(this._watchdogInterval);
       this._watchdogInterval = null;
@@ -2477,7 +2491,7 @@ class PillPilotPanel extends HTMLElement {
     if (this._personSubModal) {
       this._wireSubModalListeners();
     }
-    console.log("[PillPilot] rendered");
+    if (this._debug) console.log("[PillPilot] rendered");
   }
 
   // Shown immediately on mount, before HA pushes hass to the element.
