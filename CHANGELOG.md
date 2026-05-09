@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.5] — 2026-05-08
+
+First stable release after the v0.1.0 → v0.1.5 beta cycle. Promotes v0.1.5-beta6 unchanged. Cumulative highlights for users coming from 0.1.0:
+
+- **Validation hardening**: frequency must be `daily` / `weekly` / `monthly`; weekday list range-checked 0–6; time strings format-validated against HH:MM and normalized (`9:00` is accepted, stored as `09:00`); days-of-month list range-checked 1–31; malformed list inputs now surface a friendly error instead of crashing the WS handler.
+- **Data integrity**: duplicate prescription ids are detected and rejected. ATC code, NPL ID, and Varunummer fields are trimmed before storage so `"Levaxin "` and `"Levaxin"` aren't treated as separate medicines.
+- **UX**: reminder-window field is a paired slider + editable number input in both forms (HA Settings and panel sub-modal). Gear button next to + Add medicine opens the integration config directly. Modal banner shows friendly text for every validation key.
+- **Panel rendering**: drug-identity edits (medicine type, ATC code) correctly trigger re-render. Add/Edit modal's prescription summary uses the right unit ("drop" / "injection" / "pill") instead of always saying "pill".
+- **Internal**: type strings consolidated into shared constants. Pre-canonical migration helpers removed. Shared validator helpers (`_normalize_times`, `_strip_or_none`) extracted for use by both validators.
+
+(See per-beta entries below for which fix shipped in which prerelease.)
+
 ## [0.1.5-beta6] — 2026-05-08
 
 - Fix: Frequency must now be one of `daily`, `weekly`, `monthly` — invalid values are rejected with a friendly error instead of silently accepted.

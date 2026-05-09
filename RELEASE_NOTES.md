@@ -1,3 +1,37 @@
+# v0.1.5
+
+First stable release of the 0.1.x line. Matches v0.1.5-beta6 unchanged. If you've been on the beta channel, no action needed. If you're upgrading from v0.1.0, here's what changed.
+
+## Validation now catches bad input cleanly
+
+The Add/Edit medicine modal previously had cases where unusual input could either crash the WebSocket handler or silently accept things it shouldn't. All fixed:
+
+- Days-of-month, weekdays, and times all get format- and range-checked. Bad input shows a clear error in the modal banner instead of silently breaking.
+- Time strings are normalized — `9:00` and `09:00` are both accepted and stored as `09:00`.
+- Frequency must be daily, weekly, or monthly.
+- Two prescriptions can't share an id (would have caused silent data loss when saving).
+- ATC code, NPL ID, and Varunummer are trimmed before storage, so `Levaxin ` and `Levaxin` no longer become two duplicate medicines.
+
+## UX
+
+- Reminder-window field in both forms (HA Settings and the in-panel sub-modal) is now a paired slider + editable number, range 5–240 minutes step 5. Drag the slider for quick adjustment or tap the number to type a precise value.
+- Gear button next to **+ Add medicine** opens the integration config directly.
+- The prescription summary in the Add/Edit modal now uses the right unit (drop / injection / pill) instead of always saying "pill".
+
+## Under the hood
+
+- Drug-identity edits (changing the medicine type, or editing ATC code) now correctly trigger a panel refresh.
+- Type strings (`pill`, `drops`, `injection`) consolidated into shared constants.
+- Removed several pieces of dead code and pre-canonical migration helpers.
+
+## Known issues
+
+See the README's [Known issues](https://github.com/TSA3000/ha-pillpilot#known-issues) section for the current list.
+
+## Upgrading
+
+Upgrade via HACS as usual. No data migration needed — all storage shapes are unchanged from 0.1.0.
+
 # v0.1.5-beta6
 
 > Pre-release. HACS users on the stable channel won't see this update — only those with "show beta versions" enabled.
