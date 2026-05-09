@@ -54,11 +54,48 @@ CONF_MED_PRESCRIPTIONS = "prescriptions"
 # merge key when the panel sends back an updated prescriptions list.
 CONF_PRESCRIPTION_ID = "id"
 
-# Frequency values
+# Frequency values — LEGACY pre-v0.2.0 schema. Kept only for the
+# migration helper (`migrate_v1_to_v2_schedule` in schedule.py) which
+# converts existing prescriptions to the new RRULE-based shape. The
+# rest of the codebase uses CONF_MED_RRULE + CONF_MED_SCHEDULE_TYPE.
+# REMOVE AT v1.0.0 along with the migration helper.
 FREQ_DAILY = "daily"
 FREQ_WEEKLY = "weekly"
 FREQ_MONTHLY = "monthly"
 ALL_FREQUENCIES = (FREQ_DAILY, FREQ_WEEKLY, FREQ_MONTHLY)
+
+# v0.2.0 schedule schema — RRULE is the source of truth at rest;
+# schedule_type tells the panel UI which mode to render. RRULE handles
+# every calendar-based scenario (daily, weekly, monthly, every-N-days,
+# course-with-end-date, plus arbitrary RFC 5545 patterns); cycle mode
+# overlays a stateful on/off pattern that RRULE can't express natively.
+CONF_MED_RRULE = "rrule"
+CONF_MED_SCHEDULE_TYPE = "schedule_type"
+CONF_MED_ENDS_ON = "ends_on"  # ISO date "YYYY-MM-DD" or None — course end
+CONF_MED_CYCLE_ANCHOR = "cycle_anchor"        # ISO date or None
+CONF_MED_CYCLE_ON_DAYS = "cycle_on_days"      # int or None
+CONF_MED_CYCLE_OFF_DAYS = "cycle_off_days"    # int or None
+
+SCHEDULE_TYPE_DAILY = "daily"            # FREQ=DAILY
+SCHEDULE_TYPE_WEEKLY = "weekly"          # FREQ=WEEKLY;BYDAY=...
+SCHEDULE_TYPE_MONTHLY = "monthly"        # FREQ=MONTHLY;BYMONTHDAY=...
+SCHEDULE_TYPE_INTERVAL = "interval"      # FREQ=DAILY;INTERVAL=N (with DTSTART anchor)
+SCHEDULE_TYPE_CYCLE = "cycle"            # FREQ=DAILY tick + cycle_on/off overlay
+SCHEDULE_TYPE_CUSTOM = "custom"          # raw user-provided RRULE
+ALL_SCHEDULE_TYPES = (
+    SCHEDULE_TYPE_DAILY,
+    SCHEDULE_TYPE_WEEKLY,
+    SCHEDULE_TYPE_MONTHLY,
+    SCHEDULE_TYPE_INTERVAL,
+    SCHEDULE_TYPE_CYCLE,
+    SCHEDULE_TYPE_CUSTOM,
+)
+
+# Weekday encoding bridge: panel/Python uses 0–6 (Mon–Sun, ISO weekday
+# minus one). RRULE BYDAY uses two-letter codes. These maps keep the
+# conversion in one place so the validator and migration helper agree.
+WEEKDAY_TO_RRULE = {0: "MO", 1: "TU", 2: "WE", 3: "TH", 4: "FR", 5: "SA", 6: "SU"}
+RRULE_TO_WEEKDAY = {v: k for k, v in WEEKDAY_TO_RRULE.items()}
 
 DEFAULT_REMIND_WINDOW = 60
 DEFAULT_SCAN_INTERVAL = timedelta(minutes=1)

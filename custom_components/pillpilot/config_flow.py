@@ -48,9 +48,13 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_MED_ATC_CODE,
+    CONF_MED_CYCLE_ANCHOR,
+    CONF_MED_CYCLE_OFF_DAYS,
+    CONF_MED_CYCLE_ON_DAYS,
     CONF_MED_DAYS,
     CONF_MED_DAYS_OF_MONTH,
     CONF_MED_DOSE,
+    CONF_MED_ENDS_ON,
     CONF_MED_FREQUENCY,
     CONF_MED_NAME,
     CONF_MED_NOTES,
@@ -59,6 +63,8 @@ from .const import (
     CONF_MED_PRESCRIPTIONS,
     CONF_PRESCRIPTION_ID,
     CONF_MED_REMIND_WINDOW,
+    CONF_MED_RRULE,
+    CONF_MED_SCHEDULE_TYPE,
     CONF_MED_TIMES,
     CONF_MED_TOTAL_DOSE_MG,
     CONF_MED_TYPE,
@@ -79,6 +85,9 @@ from .const import (
     MED_TYPE_INJECTION,
     MED_TYPE_PILL,
     PANEL_VISIBILITY_OPTIONS,
+    SCHEDULE_TYPE_DAILY,
+    SCHEDULE_TYPE_MONTHLY,
+    SCHEDULE_TYPE_WEEKLY,
 )
 from .dose import Dose
 from .medicines import (
@@ -87,6 +96,7 @@ from .medicines import (
     build_dropdown_options,
     lookup_by_name,
 )
+from .schedule import rrule_to_friendly, schedule_to_rrule
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +260,14 @@ def validate_medicine_input(
     # Range-check: weekdays must be 0–6 (Monday=0 through Sunday=6).
     if any(d < 0 or d > 6 for d in days_parsed):
         return None, {CONF_MED_DAYS: "days_range"}
+    # Weekly mode must specify at least one weekday. Pre-v0.2.0 this
+    # was silently accepted and stored as weekly with empty days; the
+    # Schedule class then fell back to all-7-days at read time, which
+    # surprised users (it looked weekly in the form but fired daily).
+    # v0.2.0+ requires explicit days for weekly so the canonical RRULE
+    # is unambiguous.
+    if freq == FREQ_WEEKLY and not days_parsed:
+        return None, {CONF_MED_DAYS: "days_required"}
 
     # Parse times — accept comma-string form, validate HH:MM format,
     # zero-pad single-digit hours so downstream code sees canonical form.
@@ -259,6 +277,20 @@ def validate_medicine_input(
     if times_err is not None:
         return None, {CONF_MED_TIMES: times_err}
 
+    # v0.2.0+: storage is RRULE-based. The form still sends friendly
+    # frequency/days/days_of_month, validated above; we translate
+    # to canonical RRULE here. Legacy keys are dropped from the
+    # output dict — the rest of the codebase only handles new shape.
+    if freq == FREQ_WEEKLY:
+        rrule_str = schedule_to_rrule(SCHEDULE_TYPE_WEEKLY, weekdays=days_parsed)
+        schedule_type = SCHEDULE_TYPE_WEEKLY
+    elif freq == FREQ_MONTHLY:
+        rrule_str = schedule_to_rrule(SCHEDULE_TYPE_MONTHLY, days_of_month=doms)
+        schedule_type = SCHEDULE_TYPE_MONTHLY
+    else:
+        rrule_str = "FREQ=DAILY"
+        schedule_type = SCHEDULE_TYPE_DAILY
+
     prescription = {
         CONF_PRESCRIPTION_ID: uuid.uuid4().hex,
         CONF_MED_PERSON: person_id,
@@ -266,11 +298,17 @@ def validate_medicine_input(
         CONF_MED_UNIT_STRENGTH_MG: dose.strength_mg,
         CONF_MED_TOTAL_DOSE_MG: dose.total_mg,
         CONF_MED_DOSE: dose_text,
-        CONF_MED_FREQUENCY: freq,
+        CONF_MED_RRULE: rrule_str,
+        CONF_MED_SCHEDULE_TYPE: schedule_type,
         CONF_MED_TIMES: times_normalized,
-        CONF_MED_DAYS: days_parsed,
-        CONF_MED_DAYS_OF_MONTH: doms,
         CONF_MED_REMIND_WINDOW: int(user_input[CONF_MED_REMIND_WINDOW]),
+        # New fields (Phase 2/3 will populate from form). Stored as
+        # None now so the storage shape is uniform across all
+        # prescriptions regardless of when they were created.
+        CONF_MED_ENDS_ON: None,
+        CONF_MED_CYCLE_ANCHOR: None,
+        CONF_MED_CYCLE_ON_DAYS: None,
+        CONF_MED_CYCLE_OFF_DAYS: None,
     }
     med = {
         # drug identity (shared across prescriptions)
@@ -556,6 +594,26 @@ def validate_medicine_input_multi(
             p_errors[CONF_MED_DAYS] = "days_range"
             prescription_errors.append(p_errors)
             continue
+        # Weekly without explicit days is rejected — see single
+        # validator for rationale.
+        if freq == FREQ_WEEKLY and not days:
+            p_errors[CONF_MED_DAYS] = "days_required"
+            prescription_errors.append(p_errors)
+            continue
+
+        # Build canonical RRULE from validated friendly fields. Same
+        # logic as the single-prescription validator above; kept
+        # inline rather than extracted to a helper to make the
+        # output construction self-contained for readability.
+        if freq == FREQ_WEEKLY:
+            rrule_str = schedule_to_rrule(SCHEDULE_TYPE_WEEKLY, weekdays=days)
+            schedule_type = SCHEDULE_TYPE_WEEKLY
+        elif freq == FREQ_MONTHLY:
+            rrule_str = schedule_to_rrule(SCHEDULE_TYPE_MONTHLY, days_of_month=doms)
+            schedule_type = SCHEDULE_TYPE_MONTHLY
+        else:
+            rrule_str = "FREQ=DAILY"
+            schedule_type = SCHEDULE_TYPE_DAILY
 
         validated_prescriptions.append({
             CONF_PRESCRIPTION_ID: p.get(CONF_PRESCRIPTION_ID) or uuid.uuid4().hex,
@@ -564,13 +622,16 @@ def validate_medicine_input_multi(
             CONF_MED_UNIT_STRENGTH_MG: dose.strength_mg,
             CONF_MED_TOTAL_DOSE_MG: dose.total_mg,
             CONF_MED_DOSE: dose.formatted(),
-            CONF_MED_FREQUENCY: freq,
+            CONF_MED_RRULE: rrule_str,
+            CONF_MED_SCHEDULE_TYPE: schedule_type,
             CONF_MED_TIMES: times,
-            CONF_MED_DAYS: days,
-            CONF_MED_DAYS_OF_MONTH: doms,
             CONF_MED_REMIND_WINDOW: int(
                 p.get(CONF_MED_REMIND_WINDOW) or DEFAULT_REMIND_WINDOW
             ),
+            CONF_MED_ENDS_ON: None,
+            CONF_MED_CYCLE_ANCHOR: None,
+            CONF_MED_CYCLE_ON_DAYS: None,
+            CONF_MED_CYCLE_OFF_DAYS: None,
         })
         prescription_errors.append({})
 
@@ -962,6 +1023,37 @@ class MedicineSubentryFlow(ConfigSubentryFlow):
         """
         prescriptions = existing.get(CONF_MED_PRESCRIPTIONS) or []
         first = prescriptions[0] if prescriptions else {}
+
+        # v0.2.0+: storage is RRULE-based, but the HA Settings form
+        # still uses friendly frequency/days/days_of_month inputs.
+        # Derive friendly fields from the stored RRULE for the form
+        # defaults. New medicine creation (empty `first`) falls
+        # through to the historical defaults below.
+        stored_rrule = first.get(CONF_MED_RRULE)
+        stored_schedule_type = first.get(CONF_MED_SCHEDULE_TYPE)
+        if stored_rrule:
+            friendly = rrule_to_friendly(stored_rrule)
+            # Daily/weekly/monthly map 1:1 to the legacy frequency
+            # form value. Interval/cycle/custom modes don't have UI
+            # in this form yet — they fall back to daily so the form
+            # opens cleanly; users edit those modes through the
+            # panel sub-modal once Phase 2/3 lands.
+            if stored_schedule_type in (
+                SCHEDULE_TYPE_DAILY,
+                SCHEDULE_TYPE_WEEKLY,
+                SCHEDULE_TYPE_MONTHLY,
+            ):
+                form_frequency = stored_schedule_type
+            else:
+                form_frequency = SCHEDULE_TYPE_DAILY
+            form_days = friendly["weekdays"] or list(range(7))
+            form_doms = friendly["days_of_month"] or []
+        else:
+            # New medicine — historical defaults.
+            form_frequency = FREQ_DAILY
+            form_days = list(range(7))
+            form_doms = []
+
         return {
             CONF_MED_NAME: existing.get(CONF_MED_NAME) or "",
             CONF_MED_TYPE: existing.get(CONF_MED_TYPE) or MED_TYPE_PILL,
@@ -976,15 +1068,11 @@ class MedicineSubentryFlow(ConfigSubentryFlow):
             # weekly + 08:00 to daily + 07:00 — matches the most
             # common case (a single morning pill) better, so adding
             # a medicine takes fewer clicks. Existing medicines
-            # round-trip identically via first.get(...).
-            CONF_MED_FREQUENCY: first.get(CONF_MED_FREQUENCY) or FREQ_DAILY,
+            # round-trip via friendly translation above.
+            CONF_MED_FREQUENCY: form_frequency,
             CONF_MED_TIMES: ",".join(first.get(CONF_MED_TIMES) or ["07:00"]),
-            CONF_MED_DAYS: [
-                str(d) for d in (first.get(CONF_MED_DAYS) or list(range(7)))
-            ],
-            CONF_MED_DAYS_OF_MONTH: ",".join(
-                str(d) for d in (first.get(CONF_MED_DAYS_OF_MONTH) or [])
-            ),
+            CONF_MED_DAYS: [str(d) for d in form_days],
+            CONF_MED_DAYS_OF_MONTH: ",".join(str(d) for d in form_doms),
             CONF_MED_REMIND_WINDOW: first.get(CONF_MED_REMIND_WINDOW)
             or DEFAULT_REMIND_WINDOW,
         }

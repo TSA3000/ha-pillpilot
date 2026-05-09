@@ -35,6 +35,7 @@ from .config_flow import (
 )
 from .medicines import DEFAULT_MEDICINES_DB_URL, MedicineDatabase, sanitize_for_ws
 from .panel import async_register_panel, async_unregister_panel
+from .schedule import migrate_v1_to_v2_schedule
 from .sources import build_sources
 
 _LOGGER = logging.getLogger(__name__)
@@ -101,6 +102,44 @@ def _medicines_from_subentries(entry: ConfigEntry) -> list[dict[str, Any]]:
     return out
 
 
+def _migrate_subentries_to_v020(hass: HomeAssistant, entry: ConfigEntry) -> int:
+    """Migrate any v0.1.x prescription shapes to v0.2.0 (RRULE-based).
+
+    Walks every medicine subentry, runs ``migrate_v1_to_v2_schedule``
+    on each prescription, and writes back any subentry that actually
+    changed. Idempotent — a subentry already on v0.2.0 shape is a
+    no-op (the migration helper detects ``rrule`` presence and
+    bails). Returns the count of subentries modified, for the log.
+
+    REMOVE AT v1.0.0 — by v1.0 every active install has passed
+    through a 0.x.x release that ran this migration; v1.0+ rejects
+    legacy shape outright.
+    """
+    migrated = 0
+    for sub in list(entry.subentries.values()):
+        if sub.subentry_type != SUBENTRY_TYPE_MEDICINE:
+            continue
+        prescriptions = sub.data.get("prescriptions") or []
+        if not prescriptions:
+            continue
+        # Quick check: any prescription missing rrule => needs migration.
+        if all("rrule" in p for p in prescriptions):
+            continue
+        new_prescriptions = [
+            migrate_v1_to_v2_schedule(dict(p)) for p in prescriptions
+        ]
+        new_data = {**sub.data, "prescriptions": new_prescriptions}
+        try:
+            hass.config_entries.async_update_subentry(entry, sub, data=new_data)
+            migrated += 1
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception(
+                "Migration to v0.2.0 schedule shape failed for subentry %s",
+                sub.subentry_id,
+            )
+    return migrated
+
+
 # ---------------------------------------------------------------------------
 # Setup / unload
 # ---------------------------------------------------------------------------
@@ -109,6 +148,16 @@ def _medicines_from_subentries(entry: ConfigEntry) -> list[dict[str, Any]]:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up PillPilot from a config entry."""
     hass.data.setdefault(DOMAIN, {})
+
+    # v0.2.0 schema migration — convert any legacy prescription shape
+    # to the new RRULE-based one before anyone else looks at the data.
+    # Idempotent (no-op if already migrated). REMOVE AT v1.0.0.
+    migrated = _migrate_subentries_to_v020(hass, entry)
+    if migrated:
+        _LOGGER.info(
+            "Migrated %d medicine subentry/subentries to v0.2.0 schedule shape",
+            migrated,
+        )
 
     # Medicines list (Swedish meds) is shared
     # across all entries — there's only ever one PillPilot

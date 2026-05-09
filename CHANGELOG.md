@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.0-beta1] — 2026-05-09
+
+First beta of the scheduler rewrite. Engine swapped to an RRULE-backed implementation. Existing prescriptions are migrated on first start. UI unchanged in this beta.
+
+- New: storage holds an `rrule` + `schedule_type` instead of `frequency` / `days` / `days_of_month`. Lets future betas add every-N-days, courses with end dates, and cyclical on/off.
+- New: `python-dateutil` declared in manifest requirements.
+- Fix: weekly without selected weekdays is rejected with `days_required`. Pre-v0.2.0 it was silently accepted and ran like daily.
+- Migration: ran once at setup. Re-run is a no-op.
+
 ## [0.1.5] — 2026-05-08
 
 First stable release after the v0.1.0 → v0.1.5 beta cycle. Promotes v0.1.5-beta6 unchanged. Cumulative highlights for users coming from 0.1.0:

@@ -21,9 +21,13 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_MED_ATC_CODE,
+    CONF_MED_CYCLE_ANCHOR,
+    CONF_MED_CYCLE_OFF_DAYS,
+    CONF_MED_CYCLE_ON_DAYS,
     CONF_MED_DAYS,
     CONF_MED_DAYS_OF_MONTH,
     CONF_MED_DOSE,
+    CONF_MED_ENDS_ON,
     CONF_MED_FREQUENCY,
     CONF_MED_ID,
     CONF_MED_NAME,
@@ -32,6 +36,8 @@ from .const import (
     CONF_MED_PERSON,
     CONF_MED_PRESCRIPTIONS,
     CONF_MED_REMIND_WINDOW,
+    CONF_MED_RRULE,
+    CONF_MED_SCHEDULE_TYPE,
     CONF_MED_TIMES,
     CONF_MED_TOTAL_DOSE_MG,
     CONF_MED_TYPE,
@@ -51,6 +57,9 @@ from .const import (
     FREQ_DAILY,
     FREQ_MONTHLY,
     FREQ_WEEKLY,
+    SCHEDULE_TYPE_DAILY,
+    SCHEDULE_TYPE_MONTHLY,
+    SCHEDULE_TYPE_WEEKLY,
     SOURCE_LOOKUP_TTL,
     STATE_DUE,
     STATE_MISSED,
@@ -61,7 +70,7 @@ from .const import (
     STORAGE_VERSION,
 )
 from .sources import LookupKey, LookupResult, MedicineSource
-from .schedule import Schedule
+from .schedule import Schedule, rrule_to_friendly
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -666,6 +675,31 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
                 )
                 self._fired_missed.add(key)
 
+        # v0.2.0+: storage is RRULE-based. PrescriptionState exposes
+        # friendly fields (frequency/days/days_of_month) for backward
+        # compatibility with the panel JS — derive them from the
+        # canonical RRULE here so the WS read path doesn't need its
+        # own translation. Schedule modes beyond the legacy three
+        # (interval/cycle/custom) fall back to "daily" for the form
+        # field; their actual recurrence is fully captured by the
+        # RRULE inside the Schedule object the coordinator already
+        # uses, so dose timing is unaffected.
+        stored_rrule = prescription.get(CONF_MED_RRULE) or "FREQ=DAILY"
+        stored_schedule_type = (
+            prescription.get(CONF_MED_SCHEDULE_TYPE) or SCHEDULE_TYPE_DAILY
+        )
+        friendly = rrule_to_friendly(stored_rrule)
+        if stored_schedule_type in (
+            SCHEDULE_TYPE_DAILY,
+            SCHEDULE_TYPE_WEEKLY,
+            SCHEDULE_TYPE_MONTHLY,
+        ):
+            derived_frequency = stored_schedule_type
+        else:
+            derived_frequency = SCHEDULE_TYPE_DAILY
+        derived_days = friendly["weekdays"] or list(range(7))
+        derived_doms = friendly["days_of_month"] or []
+
         return PrescriptionState(
             id=prescription.get(CONF_PRESCRIPTION_ID, ""),
             person_id=person_id,
@@ -678,10 +712,10 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
             total_dose_mg=float(
                 prescription.get(CONF_MED_TOTAL_DOSE_MG) or 0.0
             ),
-            frequency=prescription.get(CONF_MED_FREQUENCY) or FREQ_WEEKLY,
+            frequency=derived_frequency,
             times=list(prescription.get(CONF_MED_TIMES, [])),
-            days=list(prescription.get(CONF_MED_DAYS) or list(range(7))),
-            days_of_month=list(prescription.get(CONF_MED_DAYS_OF_MONTH) or []),
+            days=list(derived_days),
+            days_of_month=list(derived_doms),
             remind_window_minutes=int(
                 prescription.get(CONF_MED_REMIND_WINDOW) or DEFAULT_REMIND_WINDOW
             ),

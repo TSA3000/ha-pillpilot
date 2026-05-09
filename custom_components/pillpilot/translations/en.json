@@ -88,6 +88,7 @@
         "days_of_month_required": "Monthly frequency requires at least one day of the month.",
         "days_invalid": "Weekdays must be a list of integers 0-6 (Monday=0 through Sunday=6).",
         "days_range": "Weekdays must each be between 0 and 6 (Monday=0 through Sunday=6).",
+        "days_required": "Weekly frequency requires at least one weekday.",
         "duplicate_prescription_id": "Two prescriptions share the same id. Each prescription must have a unique id.",
         "frequency_invalid": "Frequency must be one of: daily, weekly, monthly.",
         "times_invalid": "Times must be in HH:MM format (e.g. '07:00' or '7:00').",
