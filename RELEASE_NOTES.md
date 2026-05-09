@@ -1,17 +1,20 @@
-# v0.2.0-beta3.5
+# v0.2.0-beta3.6
 
 > Panel UX cleanup. Install over the top — no data migration, prescriptions keep their existing settings.
 
 ## What changed
 
-The panel's prescription form replaces the "Different times per day of week" checkbox with a radio pair:
+The "Days of week" picker that appears when frequency is set to "Weekly" replaces seven checkboxes with chip buttons and three quick presets:
 
-- **Same times every day** — shows a single "Times of day" field. (Today's default.)
-- **Different times per weekday** — shows seven Mon-Sun rows; leave a row blank to skip that weekday.
+- **Every day** — selects all seven days.
+- **Weekdays** — selects Mon-Fri.
+- **Weekends** — selects Sat-Sun.
 
-Only one input is visible at a time. The old layout kept "Times of day" visible while the per-weekday rows were also showing, with a paragraph of help text trying to explain which one took precedence. Mode picker removes the ambiguity.
+Below the presets is the chip row: tap a chip to toggle that day in or out. The active preset (if your selection matches one) is highlighted. Picking a custom subset just leaves no preset highlighted — chips still work the same.
 
-Switching between modes is lossless within an edit session — both the single-field value and the seven per-weekday entries stay in the draft regardless of which mode is active, so flipping back and forth does not destroy what you typed. On save, only the active mode's data persists.
+Same data underneath as before: a set of weekday indices 0-6. Validator, on-disk format, and the WebSocket payload are unchanged.
+
+If you have prescriptions where Weekly was set with all seven days ticked (functionally identical to Daily), tapping **Weekdays** now reduces it to Mon-Fri in one click — the original motivation for the rework.
 
 ## Upgrading
 

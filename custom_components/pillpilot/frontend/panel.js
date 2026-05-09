@@ -820,23 +820,60 @@ const STYLES = `
     font-size: 12px;
     color: var(--error-color, #f44336);
   }
-  .day-checkboxes {
+  /* v0.2.0-beta3.6 weekday chip selector + presets. Replaces the
+     beta3 .day-checkboxes UI — same data model (draft.daysOfWeek
+     Set of "0".."6"), better UX (one-tap presets for the common
+     cases, chip buttons in place of 7 checkbox rectangles). */
+  .weekday-presets {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
+    margin-bottom: 8px;
   }
-  .day-checkbox {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
+  .weekday-preset-btn {
+    padding: 4px 10px;
     border: 1px solid var(--divider-color, rgba(0,0,0,0.2));
-    border-radius: 4px;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--secondary-text-color, #666);
+    font-size: 12px;
     cursor: pointer;
-    font-size: 13px;
-    user-select: none;
+    font-family: inherit;
   }
-  .day-checkbox input { margin: 0; cursor: pointer; }
+  .weekday-preset-btn.active {
+    background: var(--primary-color, #03a9f4);
+    color: var(--text-primary-color, white);
+    border-color: var(--primary-color, #03a9f4);
+  }
+  .weekday-preset-btn:hover:not(.active) {
+    background: var(--secondary-background-color, rgba(0,0,0,0.05));
+  }
+  .weekday-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .weekday-chip {
+    padding: 6px 12px;
+    border: 1px solid var(--divider-color, rgba(0,0,0,0.2));
+    border-radius: 16px;
+    background: transparent;
+    color: var(--secondary-text-color, #666);
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+    min-width: 44px;
+    text-align: center;
+  }
+  .weekday-chip.active {
+    background: var(--primary-color, #03a9f4);
+    color: var(--text-primary-color, white);
+    border-color: var(--primary-color, #03a9f4);
+    font-weight: 500;
+  }
+  .weekday-chip:hover:not(.active) {
+    background: var(--secondary-background-color, rgba(0,0,0,0.05));
+  }
 
   /* v0.2.0-beta3.5 times-mode picker (radios). Replaces the
      beta3 .per-weekday-toggle checkbox UI — same data model
@@ -2828,14 +2865,34 @@ class PillPilotPanel extends HTMLElement {
       .join("");
 
     const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    const dayCheckboxes = dayLabels
+    // beta3.6: which preset (if any) matches the current selection,
+    // for active-state highlighting. None matches → custom selection
+    // → no preset highlighted (user is mid-edit on individual chips).
+    const selectedDays = Array.from(draft.daysOfWeek)
+      .map((d) => parseInt(d, 10))
+      .sort((a, b) => a - b);
+    const isEveryDay = selectedDays.length === 7;
+    const isWeekdays =
+      selectedDays.length === 5 &&
+      selectedDays.every((d, i) => d === i);
+    const isWeekends =
+      selectedDays.length === 2 &&
+      selectedDays[0] === 5 &&
+      selectedDays[1] === 6;
+    const presetButtons = [
+      ["every-day", "Every day", isEveryDay],
+      ["weekdays", "Weekdays", isWeekdays],
+      ["weekends", "Weekends", isWeekends],
+    ]
+      .map(
+        ([preset, label, active]) =>
+          `<button type="button" class="weekday-preset-btn ${active ? "active" : ""}" data-action="weekday-preset" data-preset="${preset}">${label}</button>`,
+      )
+      .join("");
+    const dayChips = dayLabels
       .map((label, idx) => {
-        const checked = draft.daysOfWeek.has(String(idx)) ? "checked" : "";
-        return `
-          <label class="day-checkbox">
-            <input type="checkbox" data-sub-field="daysOfWeek" data-day-index="${idx}" ${checked}>
-            <span>${label}</span>
-          </label>`;
+        const active = draft.daysOfWeek.has(String(idx)) ? "active" : "";
+        return `<button type="button" class="weekday-chip ${active}" data-action="weekday-toggle" data-day-index="${idx}">${label}</button>`;
       })
       .join("");
 
@@ -2912,7 +2969,8 @@ class PillPilotPanel extends HTMLElement {
               ${showWeekly ? `
               <div class="form-field">
                 <span class="form-label">Days of week</span>
-                <div class="day-checkboxes">${dayCheckboxes}</div>
+                <div class="weekday-presets">${presetButtons}</div>
+                <div class="weekday-chip-row">${dayChips}</div>
                 ${fieldError("days")}
               </div>` : ""}
               ${showMonthly ? `
@@ -3170,6 +3228,43 @@ class PillPilotPanel extends HTMLElement {
       });
     });
 
+    // beta3.6: weekday chip click — toggle the day's membership in
+    // draft.daysOfWeek, then re-render so the chip's active class
+    // and any matched preset's highlight update.
+    root.querySelectorAll('[data-action="weekday-toggle"]').forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (!this._personSubModal) return;
+        const draft = this._personSubModal.draft;
+        const idx = String(e.currentTarget.dataset.dayIndex);
+        if (draft.daysOfWeek.has(idx)) {
+          draft.daysOfWeek.delete(idx);
+        } else {
+          draft.daysOfWeek.add(idx);
+        }
+        this._render();
+      });
+    });
+
+    // beta3.6: weekday preset button — overwrite draft.daysOfWeek
+    // with the preset's day set, then re-render. Subsequent chip
+    // taps customize from there.
+    root.querySelectorAll('[data-action="weekday-preset"]').forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (!this._personSubModal) return;
+        const draft = this._personSubModal.draft;
+        const preset = e.currentTarget.dataset.preset;
+        const PRESETS = {
+          "every-day": ["0", "1", "2", "3", "4", "5", "6"],
+          "weekdays": ["0", "1", "2", "3", "4"],
+          "weekends": ["5", "6"],
+        };
+        draft.daysOfWeek = new Set(PRESETS[preset] || []);
+        this._render();
+      });
+    });
+
     // Sub-modal field inputs — update _personSubModal.draft. Frequency
     // changes re-render so the conditional sections show/hide. Multiple
     // controls can share a data-sub-field (e.g. remind_window has both
@@ -3181,14 +3276,7 @@ class PillPilotPanel extends HTMLElement {
       el.addEventListener(eventName, (e) => {
         if (!this._personSubModal) return;
         const draft = this._personSubModal.draft;
-        if (field === "daysOfWeek") {
-          const idx = String(e.currentTarget.dataset.dayIndex);
-          if (e.currentTarget.checked) {
-            draft.daysOfWeek.add(idx);
-          } else {
-            draft.daysOfWeek.delete(idx);
-          }
-        } else if (field === "usePerWeekday") {
+        if (field === "usePerWeekday") {
           // Times-mode picker (radios). Switching modes is lossless:
           // both draft.times (single field) and draft.timesPerWeekday
           // (7-row array) stay alive in the draft regardless of which

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0-beta3.6] — 2026-05-09
+
+UX: panel weekday selector replaces 7 checkboxes with chip buttons + quick presets.
+
+- Days-of-week field (shown when frequency is "Weekly") now renders as a row of 7 chip buttons (Mon … Sun) with three preset buttons above — **Every day**, **Weekdays**, **Weekends**. Tapping a preset overwrites the day selection in one click; tapping individual chips toggles them in or out. The active preset (if the current selection matches one) is highlighted; a custom selection shows no preset highlighted.
+- Same data model as before (`draft.daysOfWeek` is still a `Set<string>` of "0".."6"). Validator, on-disk shape, and WebSocket payload are unchanged.
+- The old `<input type="checkbox">` markup and the `.day-checkbox` CSS are removed; the `daysOfWeek` branch in the data-sub-field dispatcher is gone (chip clicks route through `data-action="weekday-toggle"` and presets through `data-action="weekday-preset"`).
+
 ## [0.2.0-beta3.5] — 2026-05-09
 
 UX: panel prescription form replaces the "Different times per day of week" checkbox with a mode picker.
