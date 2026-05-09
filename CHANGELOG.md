@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.1] — 2026-05-09
+
+Security release. No data-shape changes; drop-in upgrade from 0.2.0.
+
+- Mutating WebSocket commands (`pillpilot/create_medicine`, `pillpilot/update_medicine`, `pillpilot/delete_medicine`) now require admin. Non-admin HA users can no longer add, edit, or remove medicines via the panel's WS API. The read-only `pillpilot/get_medicines_db` stays open so the panel keeps working for non-admin viewers.
+- `pillpilot.refresh_medicines_database` service now requires admin. The handler reads `call.context.user_id` and raises `Unauthorized` for non-admin callers.
+- URL scheme for `refresh_medicines_database` restricted to `http`/`https`. Other schemes (`file`, `ftp`, etc.) are rejected at validation time.
+- Removed `error_detail` exception string from the `delete_medicine` failure response. The exception still hits the HA log; it just doesn't echo back to the client.
+
 ## [0.2.0] — 2026-05-09
 
 Promotion of the 0.2.0 beta cycle to stable. Headline changes from 0.1.5:

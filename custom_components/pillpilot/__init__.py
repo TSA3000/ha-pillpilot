@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.exceptions import Unauthorized
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -74,7 +75,7 @@ UNMARK_TAKEN_SCHEMA = vol.Schema(
 )
 REFRESH_MEDICINES_DB_SCHEMA = vol.Schema(
     {
-        vol.Optional("url"): cv.url,
+        vol.Optional("url"): vol.All(cv.url, vol.Match(r"^https?://", msg="URL must use http or https scheme")),
     }
 )
 
@@ -366,7 +367,14 @@ def _register_services(hass: HomeAssistant) -> None:
         On success the in-memory cache is updated immediately — the
         autocomplete dropdown picks up the new entries the next time
         the Add Medicine form is opened. No reload required.
+
+        Admin-only since v0.2.1: URL is user-supplied and goes to aiohttp,
+        so non-admins must not be able to point HA at arbitrary hosts.
         """
+        if call.context.user_id is not None:
+            user = await hass.auth.async_get_user(call.context.user_id)
+            if user is None or not user.is_admin:
+                raise Unauthorized(context=call.context)
         medicine_db: MedicineDatabase | None = hass.data.get(DOMAIN, {}).get(
             "medicine_db"
         )
@@ -491,6 +499,7 @@ def _register_services(hass: HomeAssistant) -> None:
         vol.Required("data"): dict,
     }
 )
+@websocket_api.require_admin
 @websocket_api.async_response
 async def _ws_update_medicine(
     hass: HomeAssistant,
@@ -599,6 +608,7 @@ async def _ws_update_medicine(
         vol.Required("data"): dict,
     }
 )
+@websocket_api.require_admin
 @websocket_api.async_response
 async def _ws_create_medicine(
     hass: HomeAssistant,
@@ -693,6 +703,7 @@ async def _ws_create_medicine(
         vol.Required("medicine_id"): cv.string,
     }
 )
+@websocket_api.require_admin
 @websocket_api.async_response
 async def _ws_delete_medicine(
     hass: HomeAssistant,
@@ -729,18 +740,11 @@ async def _ws_delete_medicine(
         hass.config_entries.async_remove_subentry(
             target_entry, target_subentry.subentry_id
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         _LOGGER.exception("Delete medicine failed for %s", medicine_id)
         connection.send_result(
             msg["id"],
-            {
-                "success": False,
-                "errors": {"base": "delete_failed"},
-                # Surface the underlying exception to the panel so the
-                # user (and we) can see what HA actually complained
-                # about, instead of a generic "delete_failed".
-                "error_detail": f"{type(exc).__name__}: {exc}",
-            },
+            {"success": False, "errors": {"base": "delete_failed"}},
         )
         return
 

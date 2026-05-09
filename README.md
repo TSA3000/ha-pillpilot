@@ -166,7 +166,6 @@ Bugs we know about and plan to fix. If you hit something not listed here, please
 
 - **A prescription with no scheduled times can still be saved.** It won't fire any reminders. Workaround: always set at least one time before saving.
 - **The Add/Edit modal doesn't close on Escape**, and the backdrop is still clickable while a save is in progress. You may need to wait a moment after clicking Save before the modal closes on its own.
-- **In multi-user Home Assistant setups, non-admin users can read and modify the medicine list** via the WebSocket API. Single-user installs are unaffected. If you share your HA install with others and need stricter access control, hold off on relying on PillPilot for now.
 
 ## Known limitations
 
