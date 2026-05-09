@@ -141,6 +141,61 @@ def _migrate_subentries_to_v020(hass: HomeAssistant, entry: ConfigEntry) -> int:
     return migrated
 
 
+def _migrate_subentries_to_v024_starts_on(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> int:
+    """Stamp ``starts_on`` on existing interval prescriptions that lack it.
+
+    Pre-v0.2.4 interval prescriptions had no stored anchor — the rrule's
+    DTSTART was implicitly ``date.today()`` at every load, so the
+    every-N-day cycle phase shifted on each HA restart. v0.2.4 stores
+    ``starts_on`` explicitly. For existing data we stamp today's date,
+    which preserves the most recent observed phase (today is whatever
+    HA last loaded the integration on, which is the same anchor it had
+    been using).
+
+    Idempotent: skips prescriptions that already have ``starts_on`` set
+    or that aren't interval-mode.
+
+    REMOVE AT v1.0.0 — by v1.0 every active install has passed through
+    a 0.x.x release that ran this migration.
+    """
+    from datetime import date as _date  # local import — only used here
+
+    today_iso = _date.today().isoformat()
+    migrated = 0
+    for sub in list(entry.subentries.values()):
+        if sub.subentry_type != SUBENTRY_TYPE_MEDICINE:
+            continue
+        prescriptions = sub.data.get("prescriptions") or []
+        if not prescriptions:
+            continue
+        new_prescriptions: list[dict[str, Any]] = []
+        changed = False
+        for p in prescriptions:
+            if (
+                p.get("schedule_type") == "interval"
+                and not p.get("starts_on")
+            ):
+                new_p = {**p, "starts_on": today_iso}
+                new_prescriptions.append(new_p)
+                changed = True
+            else:
+                new_prescriptions.append(p)
+        if not changed:
+            continue
+        new_data = {**sub.data, "prescriptions": new_prescriptions}
+        try:
+            hass.config_entries.async_update_subentry(entry, sub, data=new_data)
+            migrated += 1
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception(
+                "Migration to v0.2.4 starts_on failed for subentry %s",
+                sub.subentry_id,
+            )
+    return migrated
+
+
 # ---------------------------------------------------------------------------
 # Setup / unload
 # ---------------------------------------------------------------------------
@@ -158,6 +213,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.info(
             "Migrated %d medicine subentry/subentries to v0.2.0 schedule shape",
             migrated,
+        )
+
+    # v0.2.4 schema migration — stamp starts_on on interval prescriptions
+    # that pre-date the explicit anchor field. Idempotent. REMOVE AT v1.0.0.
+    migrated_v024 = _migrate_subentries_to_v024_starts_on(hass, entry)
+    if migrated_v024:
+        _LOGGER.info(
+            "Stamped starts_on on %d medicine subentry/subentries (v0.2.4)",
+            migrated_v024,
         )
 
     # Medicines list (Swedish meds) is shared

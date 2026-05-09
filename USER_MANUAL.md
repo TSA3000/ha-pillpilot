@@ -85,7 +85,11 @@ Either view: set Frequency to `Daily`, Times to whatever applies, then set **End
 
 ### Every other day, starting tomorrow
 
-Either view: Frequency → `Every N days` → Interval → `2`. The schedule's anchor is the prescription's start date, so it'll fire tomorrow, the day after tomorrow off, then on, etc. Survives month boundaries (May 30 → Jun 1 → Jun 3, not "May 30 then resets to Jun 1").
+Either view: Frequency → `Every N days` → Interval → `2`. Set Start date to tomorrow's date if you want the first dose to fire tomorrow; leave blank to start today. The cycle then alternates from the start date and survives month boundaries (May 30 → Jun 1 → Jun 3, not "May 30 then resets to Jun 1").
+
+### Adding an Every-N-days medicine retroactively
+
+If you take a 14-day shot and your last dose was 7 days ago, set Frequency → `Every N days`, Interval → `14`, and Start date → the date of your last shot. The next dose will fire 7 days from today rather than 14. Past dates are accepted — the schedule jumps forward by multiples of N until it lands on or after today.
 
 ### Skip the medicine on weekends entirely (no doses Sat-Sun)
 

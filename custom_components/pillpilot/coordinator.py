@@ -28,6 +28,7 @@ from .const import (
     CONF_MED_DAYS_OF_MONTH,
     CONF_MED_DOSE,
     CONF_MED_ENDS_ON,
+    CONF_MED_STARTS_ON,
     CONF_MED_FREQUENCY,
     CONF_MED_ID,
     CONF_MED_NAME,
@@ -122,6 +123,7 @@ class PrescriptionState:
     # mode (and later cycle / custom modes).
     interval_days: int | None = None
     ends_on: str | None = None  # ISO "YYYY-MM-DD" or None
+    starts_on: str | None = None  # ISO "YYYY-MM-DD" or None — interval anchor
     # times_per_weekday is the WS-friendly shape (list of 7 lists of
     # HH:MM strings) — what panel.js consumes via sensor attributes.
     # None means simple mode (use ``times`` for every firing day).
@@ -723,6 +725,7 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         # mirroring what's also in the RRULE's UNTIL.
         derived_interval = friendly["interval_days"]
         derived_ends_on = prescription.get(CONF_MED_ENDS_ON)
+        derived_starts_on = prescription.get(CONF_MED_STARTS_ON)
         # times_per_weekday is stored as list-of-7-lists or None.
         # Pass through verbatim to the WS — panel reads it as JSON.
         derived_tpw = prescription.get(CONF_MED_TIMES_PER_WEEKDAY)
@@ -754,6 +757,7 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
             ),
             interval_days=derived_interval,
             ends_on=derived_ends_on,
+            starts_on=derived_starts_on,
             times_per_weekday=derived_tpw,
         )
 

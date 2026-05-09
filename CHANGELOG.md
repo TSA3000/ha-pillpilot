@@ -1,12 +1,23 @@
 # Changelog
 
+## [0.2.4] — 2026-05-09
+
+Fixes a long-standing bug in interval-mode scheduling and adds a configurable Start date. Drop-in upgrade from 0.2.2.
+
+- **Start date for interval prescriptions.** New optional field on Every-N-days schedules. Set it to a past date when adding a medicine retroactively (e.g. last shot taken 7 days ago for a 14-day cycle) — the next-due math anchors to that date, not to today. Blank means "start today" and stamps today's date at save time so the anchor persists.
+- **Anchor now stored persistently.** Pre-0.2.4 the rrule's DTSTART was implicitly `date.today()` at every load. The cycle phase shifted on every HA restart — an "every 14 days" schedule that had been firing on Mondays would silently start firing on Wednesdays after a Wednesday reboot. The anchor is now stored on the prescription and stable across restarts.
+- **Existing interval prescriptions migrated automatically.** `_migrate_subentries_to_v024_starts_on` stamps today's date on any pre-0.2.4 interval prescription that lacks `starts_on`. Idempotent. Carries `# REMOVE AT v1.0.0` markers (one in the helper docstring, one at the call site) — total marker count goes from 4 to 6.
+- New translation key `starts_on_invalid` (en + sv). Two new field labels for the HA Settings form (en + sv).
+- Panel summary line for interval prescriptions now reads "Every N days from <date> · <times>" — surfaces the anchor inline so a misalignment is visible at a glance.
+
 ## [0.2.2] — 2026-05-09
 
-UX bugfix release. Drop-in upgrade from 0.2.1.
+UX bugfix and docs release. Drop-in upgrade from 0.2.1.
 
 - **Empty schedules now rejected.** A prescription with no dose times in simple mode, or with all-empty rows in per-weekday mode, is rejected at validation. Previously such prescriptions were saved silently and never fired reminders. New translation keys `times_required` and `times_per_weekday_required` (en + sv).
 - **Modal closes on Escape.** Pressing Escape closes the prescription sub-modal first if open, otherwise the Add/Edit medicine modal. Suppressed during save so an in-flight request can't be dismissed.
 - **Backdrop click blocked during save.** Clicking outside the Add/Edit modal or sub-modal while a save is in progress no longer closes it. The Cancel and X buttons were already disabled during save; the backdrop now matches.
+- **Privacy docs.** New `Privacy` section in `README.md` plus a longer companion file `PRIVACY.md` — what's stored locally, who can read it, recorder leak surface, actionable mitigations (HA backup encryption, recorder excludes), and an explanation of why integration-level encryption isn't offered.
 
 ## [0.2.1] — 2026-05-09
 

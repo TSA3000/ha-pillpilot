@@ -184,6 +184,7 @@ class MedicineSensor(CoordinatorEntity[MedicineCoordinator], SensorEntity):
                     "scheduled_days_of_month": p.days_of_month,
                     "interval_days": p.interval_days,
                     "ends_on": p.ends_on,
+                    "starts_on": p.starts_on,
                     "times_per_weekday": p.times_per_weekday,
                     "remind_window_minutes": p.remind_window_minutes,
                     "next_dose_at": _iso(p.next_dose_at),

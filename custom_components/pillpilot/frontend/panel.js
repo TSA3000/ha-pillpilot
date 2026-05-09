@@ -1849,13 +1849,19 @@ class PillPilotPanel extends HTMLElement {
     }
     if (frequency === "interval") {
       const n = parseInt(attrs.interval_days, 10);
+      // For interval mode the start date is meaningful — it anchors
+      // the every-N-day phase. Render it inline so the user can spot
+      // a misaligned anchor at a glance ("Every 14 days from May 4").
+      const fromSuffix = attrs.starts_on
+        ? ` from ${this._formatEndDate(attrs.starts_on)}`
+        : "";
       // Plain "Every N days" — N=2 reads more naturally as "every
       // other day" but stays explicit to avoid the user wondering
       // whether the math is off-by-one.
       if (Number.isFinite(n) && n >= 2) {
-        return `Every ${n} days · ${timesPart}${endsSuffix}`;
+        return `Every ${n} days${fromSuffix} · ${timesPart}${endsSuffix}`;
       }
-      return `Every N days · ${timesPart}${endsSuffix}`;
+      return `Every N days${fromSuffix} · ${timesPart}${endsSuffix}`;
     }
     return `${timesPart}${endsSuffix}`;
   }
@@ -2279,6 +2285,7 @@ class PillPilotPanel extends HTMLElement {
       // the toggle state — true when timesPerWeekday is in effect.
       intervalDays:
         p.interval_days != null ? String(p.interval_days) : "2",
+      startsOn: p.starts_on || "",
       endsOn: p.ends_on || "",
       usePerWeekday: !!p.times_per_weekday,
       timesPerWeekday: p.times_per_weekday
@@ -2325,6 +2332,7 @@ class PillPilotPanel extends HTMLElement {
       daysOfWeek: new Set(),
       daysOfMonth: "",
       intervalDays: "2",
+      startsOn: "",
       endsOn: "",
       usePerWeekday: false,
       timesPerWeekday: ["", "", "", "", "", "", ""],
@@ -2363,6 +2371,7 @@ class PillPilotPanel extends HTMLElement {
           p.frequency === "interval"
             ? numOrDefault(p.intervalDays, (s) => parseInt(s, 10), 2)
             : null,
+        starts_on: (p.startsOn || "").trim(),
         ends_on: (p.endsOn || "").trim(),
         // times_per_weekday: send null when toggle is off (simple
         // mode), or the array of 7 strings when on. The validator
@@ -3024,6 +3033,12 @@ class PillPilotPanel extends HTMLElement {
                 <input type="number" min="2" max="365" step="1" class="form-input" data-sub-field="intervalDays" value="${escapeHtml(draft.intervalDays || "2")}">
                 <span class="form-hint">Fires every N days from the start date. Use 2 for every other day, 3 for every third day, and so on. Survives month boundaries.</span>
                 ${fieldError("interval_days")}
+              </label>
+              <label class="form-field">
+                <span class="form-label">Start date</span>
+                <input type="date" class="form-input" data-sub-field="startsOn" value="${escapeHtml(draft.startsOn || "")}">
+                <span class="form-hint">Optional — leave empty to start today. Set to a past date if you've already taken the medicine recently (e.g. last dose 7 days ago for a 14-day cycle).</span>
+                ${fieldError("starts_on")}
               </label>` : ""}
               <label class="form-field">
                 <span class="form-label">End date</span>
@@ -3074,12 +3089,14 @@ class PillPilotPanel extends HTMLElement {
       days_required: "Weekly schedule needs at least one weekday.",
       duplicate_prescription_id: "This prescription has the same id as another. Each must be unique.",
       ends_on_invalid: "End date must be in YYYY-MM-DD format. Leave empty for no end date.",
+      starts_on_invalid: "Start date must be in YYYY-MM-DD format. Leave empty to start today.",
       frequency_invalid: "Frequency must be daily, weekly, monthly, or every N days.",
       interval_days_required: "Every-N-days schedule needs an interval (2 or more days).",
       interval_days_invalid: "Interval must be a whole number.",
       interval_days_range: "Interval must be between 2 and 365 days.",
       times_per_weekday_invalid: "Per-weekday times must be 7 entries (Mon to Sun) of comma-separated HH:MM times.",
       times_per_weekday_length: "Per-weekday times need exactly 7 entries (one per weekday).",
+      times_per_weekday_required: "Per-weekday times need at least one weekday with a dose time.",
       times_per_weekday_time_invalid: "One of the per-weekday rows has a malformed time. Use HH:MM format.",
       times_invalid: "Times must be in HH:MM format (e.g. '07:00' or '7:00').",
       invalid_number: "Enter a valid number.",

@@ -68,6 +68,7 @@ from .const import (
     CONF_MED_REMIND_WINDOW,
     CONF_MED_RRULE,
     CONF_MED_SCHEDULE_TYPE,
+    CONF_MED_STARTS_ON,
     CONF_MED_TIMES,
     CONF_MED_TIMES_PER_WEEKDAY,
     CONF_MED_TOTAL_DOSE_MG,
@@ -231,6 +232,24 @@ def _parse_ends_on(raw) -> tuple[date | None, str | None]:
         return None, "ends_on_invalid"
 
 
+def _parse_starts_on(raw) -> tuple[date | None, str | None]:
+    """Parse an optional ISO-format start date.
+
+    Used as the DTSTART anchor for interval mode. Empty/None means "no
+    explicit start" — the validator stamps today's date so the anchor
+    is persisted from the moment of save (otherwise the rrule's phase
+    would shift on every HA restart). Past dates are accepted: a user
+    adding a medicine retroactively can point the anchor at their last
+    actual dose date so the next-due math lines up.
+    """
+    if raw is None or raw == "":
+        return None, None
+    try:
+        return date.fromisoformat(str(raw)), None
+    except (TypeError, ValueError):
+        return None, "starts_on_invalid"
+
+
 def validate_medicine_input(
     hass,
     user_input: dict[str, Any],
@@ -370,6 +389,20 @@ def validate_medicine_input(
     if ends_err is not None:
         return None, {CONF_MED_ENDS_ON: ends_err}
 
+    # Parse optional start date. Only meaningful for interval mode —
+    # daily/weekly/monthly fire by day-of-week / day-of-month, no anchor
+    # phase to fix. For interval, blank means "stamp today" so the
+    # rrule's DTSTART persists from save (without this the anchor would
+    # default to date.today() at every load and the cycle would drift
+    # on every HA restart).
+    starts_on_parsed, starts_err = _parse_starts_on(
+        user_input.get(CONF_MED_STARTS_ON)
+    )
+    if starts_err is not None:
+        return None, {CONF_MED_STARTS_ON: starts_err}
+    if freq == FREQ_INTERVAL and starts_on_parsed is None:
+        starts_on_parsed = date.today()
+
     # Parse optional per-weekday times override — universal across
     # every frequency mode. None = flat ``times`` applies every
     # firing day (simple mode). Set = list of 7 lists of HH:MM
@@ -446,6 +479,9 @@ def validate_medicine_input(
         # here keeps the friendly value available for the panel
         # without re-parsing UNTIL on every read.
         CONF_MED_ENDS_ON: ends_on_parsed.isoformat() if ends_on_parsed else None,
+        CONF_MED_STARTS_ON: (
+            starts_on_parsed.isoformat() if starts_on_parsed else None
+        ),
         CONF_MED_TIMES_PER_WEEKDAY: tpw_parsed,
         # Cycle fields stay None until beta4 wires the cycle UI.
         CONF_MED_CYCLE_ANCHOR: None,
@@ -761,6 +797,17 @@ def validate_medicine_input_multi(
             prescription_errors.append(p_errors)
             continue
 
+        # Parse optional start date. See single validator for rationale —
+        # blank stamps today() for interval mode so the rrule's anchor
+        # persists across HA restarts.
+        starts_on_parsed, starts_err = _parse_starts_on(p.get(CONF_MED_STARTS_ON))
+        if starts_err is not None:
+            p_errors[CONF_MED_STARTS_ON] = starts_err
+            prescription_errors.append(p_errors)
+            continue
+        if freq == FREQ_INTERVAL and starts_on_parsed is None:
+            starts_on_parsed = date.today()
+
         # Parse optional per-weekday times override — universal.
         # See single validator for the two-input-shape rationale.
         tpw_raw = p.get(CONF_MED_TIMES_PER_WEEKDAY)
@@ -822,6 +869,9 @@ def validate_medicine_input_multi(
                 p.get(CONF_MED_REMIND_WINDOW) or DEFAULT_REMIND_WINDOW
             ),
             CONF_MED_ENDS_ON: ends_on_parsed.isoformat() if ends_on_parsed else None,
+            CONF_MED_STARTS_ON: (
+                starts_on_parsed.isoformat() if starts_on_parsed else None
+            ),
             CONF_MED_TIMES_PER_WEEKDAY: tpw_parsed,
             CONF_MED_CYCLE_ANCHOR: None,
             CONF_MED_CYCLE_ON_DAYS: None,
@@ -1317,10 +1367,11 @@ class MedicineSubentryFlow(ConfigSubentryFlow):
             form_doms = []
             form_interval = 2
 
-        # ends_on: stored as ISO string ("YYYY-MM-DD") or None. Form
-        # field is also string so just pass through. None becomes ""
+        # ends_on / starts_on: stored as ISO string ("YYYY-MM-DD") or None.
+        # Form field is also string so just pass through. None becomes ""
         # so voluptuous's str validator doesn't reject it.
         form_ends_on = first.get(CONF_MED_ENDS_ON) or ""
+        form_starts_on = first.get(CONF_MED_STARTS_ON) or ""
 
         # Per-weekday defaults: 7 string fields, one per weekday. If
         # stored as None (simple mode), all 7 default to "" — meaning
@@ -1355,6 +1406,7 @@ class MedicineSubentryFlow(ConfigSubentryFlow):
             CONF_MED_DAYS: [str(d) for d in form_days],
             CONF_MED_DAYS_OF_MONTH: ",".join(str(d) for d in form_doms),
             CONF_MED_INTERVAL_DAYS: form_interval,
+            CONF_MED_STARTS_ON: form_starts_on,
             CONF_MED_ENDS_ON: form_ends_on,
             **weekday_defaults,
             CONF_MED_REMIND_WINDOW: first.get(CONF_MED_REMIND_WINDOW)
@@ -1499,6 +1551,22 @@ class MedicineSubentryFlow(ConfigSubentryFlow):
                                     mode=NumberSelectorMode.BOX,
                                 )
                             ),
+                            # starts_on is the DTSTART anchor for interval
+                            # mode. Free-text str (same rationale as
+                            # ends_on — DateSelector rejects empty
+                            # strings). Blank stamps today() in the
+                            # validator so the rrule's phase persists.
+                            # Past dates are accepted: a user adding a
+                            # medicine retroactively can point the anchor
+                            # at their last-dose date so the next-due math
+                            # lines up. Field is rendered for every
+                            # frequency but only meaningful for interval —
+                            # daily/weekly/monthly fire by day-of-week or
+                            # day-of-month, no anchor phase to fix.
+                            vol.Optional(
+                                CONF_MED_STARTS_ON,
+                                default=defaults[CONF_MED_STARTS_ON],
+                            ): str,
                             # ends_on is a free-text str rather than a
                             # DateSelector — DateSelector rejects empty
                             # string, but the universal-but-optional

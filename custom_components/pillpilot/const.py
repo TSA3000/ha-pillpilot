@@ -77,6 +77,7 @@ ALL_FREQUENCIES = (FREQ_DAILY, FREQ_WEEKLY, FREQ_MONTHLY, FREQ_INTERVAL)
 # overlays a stateful on/off pattern that RRULE can't express natively.
 CONF_MED_RRULE = "rrule"
 CONF_MED_SCHEDULE_TYPE = "schedule_type"
+CONF_MED_STARTS_ON = "starts_on"  # ISO date "YYYY-MM-DD" or None — anchor for interval mode
 CONF_MED_ENDS_ON = "ends_on"  # ISO date "YYYY-MM-DD" or None — course end
 CONF_MED_CYCLE_ANCHOR = "cycle_anchor"        # ISO date or None
 CONF_MED_CYCLE_ON_DAYS = "cycle_on_days"      # int or None

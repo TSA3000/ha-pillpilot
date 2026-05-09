@@ -58,6 +58,7 @@ from .const import (
     CONF_MED_FREQUENCY,
     CONF_MED_RRULE,
     CONF_MED_SCHEDULE_TYPE,
+    CONF_MED_STARTS_ON,
     CONF_MED_TIMES,
     CONF_MED_TIMES_PER_WEEKDAY,
     FREQ_MONTHLY,
@@ -307,6 +308,7 @@ class Schedule:
     schedule_type: str
     times: tuple[time, ...] = field(default_factory=tuple)
     anchor: date | None = None  # DTSTART for the rrule
+    starts_on: date | None = None  # user-set anchor for interval mode
     cycle_anchor: date | None = None
     cycle_on_days: int | None = None
     cycle_off_days: int | None = None
@@ -464,12 +466,24 @@ class Schedule:
 
         cycle_anchor = _parse_iso_date(med.get(CONF_MED_CYCLE_ANCHOR))
         ends_on = _parse_iso_date(med.get(CONF_MED_ENDS_ON))
+        starts_on = _parse_iso_date(med.get(CONF_MED_STARTS_ON))
+
+        # Anchor (DTSTART for the rrule) priority:
+        #   1. starts_on — user-set start date for interval mode. Critical
+        #      for interval schedules so the every-N-day cycle phase is
+        #      stable across HA restarts and reproducible from form input.
+        #   2. cycle_anchor — for SCHEDULE_TYPE_CYCLE.
+        #   3. ends_on — fallback for back-compat with legacy data.
+        #   4. date.today() — last-resort default. Only happens for fresh
+        #      pre-v0.2.4 interval prescriptions before migration runs.
+        anchor = starts_on or cycle_anchor or ends_on or date.today()
 
         return cls(
             rrule_str=med.get(CONF_MED_RRULE) or "FREQ=DAILY",
             schedule_type=med.get(CONF_MED_SCHEDULE_TYPE) or SCHEDULE_TYPE_DAILY,
             times=tuple(times),
-            anchor=ends_on or cycle_anchor or date.today(),
+            anchor=anchor,
+            starts_on=starts_on,
             cycle_anchor=cycle_anchor,
             cycle_on_days=med.get(CONF_MED_CYCLE_ON_DAYS),
             cycle_off_days=med.get(CONF_MED_CYCLE_OFF_DAYS),
