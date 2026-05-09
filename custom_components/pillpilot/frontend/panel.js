@@ -838,6 +838,46 @@ const STYLES = `
   }
   .day-checkbox input { margin: 0; cursor: pointer; }
 
+  /* v0.2.0-beta3 per-weekday times rows */
+  .per-weekday-toggle {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+  .per-weekday-toggle .form-label {
+    flex: 1;
+  }
+  .per-weekday-toggle input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+  }
+  .per-weekday-toggle .form-hint {
+    flex-basis: 100%;
+  }
+  .per-weekday-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 12px;
+    border-left: 2px solid var(--divider-color, rgba(0,0,0,0.2));
+    margin-left: 4px;
+  }
+  .weekday-row {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    align-items: center;
+    gap: 8px;
+  }
+  .weekday-label {
+    font-weight: 500;
+    font-size: 13px;
+    color: var(--secondary-text-color, #555);
+  }
+  .weekday-input {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+  }
+
   @media (max-width: 720px) {
     /* On phones the table layout doesn't fit. Collapse the parent grid
        to a 2-column layout (name+status top line, edit button in its
@@ -1659,20 +1699,28 @@ class PillPilotPanel extends HTMLElement {
   // Daily). The sensor now exposes ``frequency`` and
   // ``scheduled_days_of_month``; we read them here.
   _formatSchedule(attrs) {
-    const times = attrs.scheduled_times || [];
-    if (times.length === 0) return "—";
-    const formattedTimes = times.map((t) => this._formatTime(t)).join(" / ");
+    // ends_on (if set) appends " · until <date>" to the rest of the
+    // summary regardless of frequency mode. Universal optional field.
+    const endsSuffix = attrs.ends_on
+      ? ` · until ${this._formatEndDate(attrs.ends_on)}`
+      : "";
+
+    // Times portion: when times_per_weekday is set, render a grouped
+    // per-weekday string ("Mon-Fri 08:00 · Sat-Sun 10:00"). Otherwise
+    // fall back to the flat scheduled_times list.
+    const timesPart = this._formatTimesPart(attrs);
+    if (timesPart === "—") return "—";
 
     const frequency = attrs.frequency || "weekly";
     if (frequency === "daily") {
-      return `Daily · ${formattedTimes}`;
+      return `Daily · ${timesPart}${endsSuffix}`;
     }
     if (frequency === "weekly") {
       const days = attrs.scheduled_days || [];
       // Weekly with all 7 days OR with no days listed is functionally
       // daily — show it that way to avoid useless detail.
       if (days.length >= 7 || days.length === 0) {
-        return `Daily · ${formattedTimes}`;
+        return `Daily · ${timesPart}${endsSuffix}`;
       }
       const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
       const dayList = [...days]
@@ -1681,21 +1729,96 @@ class PillPilotPanel extends HTMLElement {
         .sort((a, b) => a - b)
         .map((d) => labels[d])
         .join(", ");
-      return `Weekly (${dayList}) · ${formattedTimes}`;
+      return `Weekly (${dayList}) · ${timesPart}${endsSuffix}`;
     }
     if (frequency === "monthly") {
       const dom = attrs.scheduled_days_of_month || [];
       if (dom.length === 0) {
-        return `Monthly · ${formattedTimes}`;
+        return `Monthly · ${timesPart}${endsSuffix}`;
       }
       const dayList = [...dom]
         .map((d) => parseInt(d, 10))
         .filter((d) => !isNaN(d) && d >= 1 && d <= 31)
         .sort((a, b) => a - b)
         .join(", ");
-      return `Monthly (${dayList}) · ${formattedTimes}`;
+      return `Monthly (${dayList}) · ${timesPart}${endsSuffix}`;
     }
-    return formattedTimes;
+    if (frequency === "interval") {
+      const n = parseInt(attrs.interval_days, 10);
+      // Plain "Every N days" — N=2 reads more naturally as "every
+      // other day" but stays explicit to avoid the user wondering
+      // whether the math is off-by-one.
+      if (Number.isFinite(n) && n >= 2) {
+        return `Every ${n} days · ${timesPart}${endsSuffix}`;
+      }
+      return `Every N days · ${timesPart}${endsSuffix}`;
+    }
+    return `${timesPart}${endsSuffix}`;
+  }
+
+  // Render the times portion of a schedule summary. When per-weekday
+  // overrides exist, group consecutive same-time weekdays into ranges
+  // ("Mon-Fri 08:00 · Sat-Sun 10:00"); empty days appear as "(skip)".
+  // When no override, flatten the scheduled_times list as before.
+  _formatTimesPart(attrs) {
+    const tpw = attrs.times_per_weekday;
+    if (Array.isArray(tpw) && tpw.length === 7) {
+      return this._formatPerWeekdayTimes(tpw);
+    }
+    const times = attrs.scheduled_times || [];
+    if (times.length === 0) return "—";
+    return times.map((t) => this._formatTime(t)).join(" / ");
+  }
+
+  // Group runs of consecutive weekdays with identical times into
+  // ranges. Accepts either an array of arrays (sensor shape) or
+  // an array of comma-strings (draft shape) — normalizes both.
+  _formatPerWeekdayTimes(tpw) {
+    const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    // Normalize each entry to a stable key string: "08:00 / 20:00"
+    // for matching, with empty entries as "" (= skip-day).
+    const norm = tpw.map((entry) => {
+      let parts = [];
+      if (Array.isArray(entry)) {
+        parts = entry;
+      } else if (typeof entry === "string") {
+        parts = entry.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+      return parts.map((t) => this._formatTime(t)).join(" / ");
+    });
+    // Find runs of consecutive equal entries.
+    const groups = [];
+    let runStart = 0;
+    for (let i = 1; i <= 7; i++) {
+      if (i === 7 || norm[i] !== norm[runStart]) {
+        groups.push({ start: runStart, end: i - 1, times: norm[runStart] });
+        runStart = i;
+      }
+    }
+    return groups
+      .map((g) => {
+        const dayLabel = g.start === g.end
+          ? labels[g.start]
+          : `${labels[g.start]}-${labels[g.end]}`;
+        if (!g.times) return `${dayLabel} (skip)`;
+        return `${dayLabel} ${g.times}`;
+      })
+      .join(" · ");
+  }
+
+  // Format an ISO date ("YYYY-MM-DD") for the schedule summary line.
+  // Falls back to the raw string for inputs we don't recognize.
+  _formatEndDate(iso) {
+    if (!iso || typeof iso !== "string") return String(iso || "");
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return iso;
+    const months = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    const monthIdx = parseInt(m[2], 10) - 1;
+    if (monthIdx < 0 || monthIdx > 11) return iso;
+    return `${months[monthIdx]} ${parseInt(m[3], 10)}, ${m[1]}`;
   }
 
   // --- actions -----------------------------------------------------------
@@ -2042,6 +2165,21 @@ class PillPilotPanel extends HTMLElement {
         (p.scheduled_days || []).map((d) => String(parseInt(d, 10)))
       ),
       daysOfMonth: (p.scheduled_days_of_month || []).join(", "),
+      // v0.2.0-beta3 fields. interval_days only matters when
+      // frequency=interval; default 2 keeps the spinner sensible if
+      // the user later flips to interval mode. ends_on is universal
+      // and always optional — empty string means "no end date".
+      // times_per_weekday is the per-weekday override: null = simple
+      // mode (flat times every firing day), set = 7-element array of
+      // comma-separated time strings (Mon=0..Sun=6). usePerWeekday is
+      // the toggle state — true when timesPerWeekday is in effect.
+      intervalDays:
+        p.interval_days != null ? String(p.interval_days) : "2",
+      endsOn: p.ends_on || "",
+      usePerWeekday: !!p.times_per_weekday,
+      timesPerWeekday: p.times_per_weekday
+        ? p.times_per_weekday.map((row) => (row || []).join(", "))
+        : ["", "", "", "", "", "", ""],
       remind_window:
         p.remind_window_minutes != null
           ? String(p.remind_window_minutes)
@@ -2082,6 +2220,10 @@ class PillPilotPanel extends HTMLElement {
       times: "",
       daysOfWeek: new Set(),
       daysOfMonth: "",
+      intervalDays: "2",
+      endsOn: "",
+      usePerWeekday: false,
+      timesPerWeekday: ["", "", "", "", "", "", ""],
       remind_window: "60",
     };
   }
@@ -2109,6 +2251,24 @@ class PillPilotPanel extends HTMLElement {
         times: (p.times || "").trim(),
         days: Array.from(p.daysOfWeek).sort((a, b) => parseInt(a) - parseInt(b)),
         days_of_month: (p.daysOfMonth || "").trim(),
+        // v0.2.0-beta3: only sent when meaningful. The validator
+        // ignores interval_days for non-interval modes anyway, but
+        // omitting the key keeps the wire payload tidy and makes
+        // older non-interval prescriptions deserialize cleanly.
+        interval_days:
+          p.frequency === "interval"
+            ? numOrDefault(p.intervalDays, (s) => parseInt(s, 10), 2)
+            : null,
+        ends_on: (p.endsOn || "").trim(),
+        // times_per_weekday: send null when toggle is off (simple
+        // mode), or the array of 7 strings when on. The validator
+        // accepts comma-separated strings or pre-split lists, so we
+        // pass the raw strings — no client-side normalization needed.
+        times_per_weekday: p.usePerWeekday
+          ? (Array.isArray(p.timesPerWeekday)
+              ? p.timesPerWeekday
+              : ["", "", "", "", "", "", ""])
+          : null,
         remind_window_minutes: numOrDefault(
           p.remind_window,
           (s) => parseInt(s, 10),
@@ -2559,6 +2719,13 @@ class PillPilotPanel extends HTMLElement {
       scheduled_days: Array.from(p.daysOfWeek).map((d) => parseInt(d, 10)),
       scheduled_days_of_month: (p.daysOfMonth || "")
         .split(",").map((d) => parseInt(d.trim(), 10)).filter((d) => !isNaN(d)),
+      interval_days: parseInt(p.intervalDays, 10),
+      ends_on: (p.endsOn || "").trim() || null,
+      // Pass per-weekday strings only when the toggle is on; null
+      // otherwise so the summary shows the flat times instead.
+      times_per_weekday: p.usePerWeekday
+        ? (Array.isArray(p.timesPerWeekday) ? p.timesPerWeekday : null)
+        : null,
     });
     return `${dosePart} · ${sched}`;
   }
@@ -2623,6 +2790,7 @@ class PillPilotPanel extends HTMLElement {
       ["daily", "Daily — every day"],
       ["weekly", "Weekly — on selected weekdays"],
       ["monthly", "Monthly — on selected days of the month"],
+      ["interval", "Every N days — every other day, every 3 days, etc."],
     ]
       .map(
         ([v, label]) =>
@@ -2644,6 +2812,7 @@ class PillPilotPanel extends HTMLElement {
 
     const showWeekly = draft.frequency === "weekly";
     const showMonthly = draft.frequency === "monthly";
+    const showInterval = draft.frequency === "interval";
 
     return `
       <div class="modal-overlay sub-modal-overlay" data-action="close-sub-modal">
@@ -2693,6 +2862,7 @@ class PillPilotPanel extends HTMLElement {
               <div class="form-field">
                 <span class="form-label">Days of week</span>
                 <div class="day-checkboxes">${dayCheckboxes}</div>
+                ${fieldError("days")}
               </div>` : ""}
               ${showMonthly ? `
               <label class="form-field">
@@ -2701,6 +2871,34 @@ class PillPilotPanel extends HTMLElement {
                 <span class="form-hint">Comma-separated days 1–31.</span>
                 ${fieldError("days_of_month")}
               </label>` : ""}
+              ${showInterval ? `
+              <label class="form-field">
+                <span class="form-label">Interval (days) *</span>
+                <input type="number" min="2" max="365" step="1" class="form-input" data-sub-field="intervalDays" value="${escapeHtml(draft.intervalDays || "2")}">
+                <span class="form-hint">Fires every N days from the start date. Use 2 for every other day, 3 for every third day, and so on. Survives month boundaries.</span>
+                ${fieldError("interval_days")}
+              </label>` : ""}
+              <label class="form-field">
+                <span class="form-label">End date</span>
+                <input type="date" class="form-input" data-sub-field="endsOn" value="${escapeHtml(draft.endsOn || "")}">
+                <span class="form-hint">Optional — leave empty for no end date. Useful for antibiotic courses or other time-limited prescriptions.</span>
+                ${fieldError("ends_on")}
+              </label>
+              <label class="form-field per-weekday-toggle">
+                <span class="form-label">Different times per day of week</span>
+                <input type="checkbox" data-sub-field="usePerWeekday" ${draft.usePerWeekday ? "checked" : ""}>
+                <span class="form-hint">Optional — when enabled, the seven rows below replace the "Times of day" field above. Leave a row blank to skip doses on that weekday. Toggling on copies "Times of day" into all seven rows; toggling off discards the per-weekday entries.</span>
+              </label>
+              ${draft.usePerWeekday ? `
+              <div class="form-field per-weekday-rows">
+                ${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label, idx) => `
+                  <div class="weekday-row">
+                    <span class="weekday-label">${label}</span>
+                    <input type="text" class="form-input weekday-input" data-sub-field="timesPerWeekday" data-day-index="${idx}" value="${escapeHtml((draft.timesPerWeekday && draft.timesPerWeekday[idx]) || "")}" placeholder="08:00, 20:00 — blank = skip">
+                  </div>
+                `).join("")}
+                ${fieldError("times_per_weekday")}
+              </div>` : ""}
               <label class="form-field">
                 <span class="form-label">Reminder window</span>
                 <div class="slider-with-input">
@@ -2741,8 +2939,16 @@ class PillPilotPanel extends HTMLElement {
       days_of_month_required: "Monthly schedule needs at least one day of the month.",
       days_invalid: "Couldn't parse weekdays — expected 0–6 (Mon–Sun).",
       days_range: "Weekdays must be between 0 (Mon) and 6 (Sun).",
+      days_required: "Weekly schedule needs at least one weekday.",
       duplicate_prescription_id: "This prescription has the same id as another. Each must be unique.",
-      frequency_invalid: "Frequency must be daily, weekly, or monthly.",
+      ends_on_invalid: "End date must be in YYYY-MM-DD format. Leave empty for no end date.",
+      frequency_invalid: "Frequency must be daily, weekly, monthly, or every N days.",
+      interval_days_required: "Every-N-days schedule needs an interval (2 or more days).",
+      interval_days_invalid: "Interval must be a whole number.",
+      interval_days_range: "Interval must be between 2 and 365 days.",
+      times_per_weekday_invalid: "Per-weekday times must be 7 entries (Mon to Sun) of comma-separated HH:MM times.",
+      times_per_weekday_length: "Per-weekday times need exactly 7 entries (one per weekday).",
+      times_per_weekday_time_invalid: "One of the per-weekday rows has a malformed time. Use HH:MM format.",
       times_invalid: "Times must be in HH:MM format (e.g. '07:00' or '7:00').",
       invalid_number: "Enter a valid number.",
       // Sub-modal local validation
@@ -2945,6 +3151,30 @@ class PillPilotPanel extends HTMLElement {
             draft.daysOfWeek.add(idx);
           } else {
             draft.daysOfWeek.delete(idx);
+          }
+        } else if (field === "usePerWeekday") {
+          // Per-weekday toggle. ON copies the flat "Times of day"
+          // value into all 7 rows so the user has a sensible
+          // starting point. OFF discards per-weekday data and
+          // returns to simple mode.
+          const checked = e.currentTarget.checked;
+          draft.usePerWeekday = checked;
+          if (checked) {
+            const flat = (draft.times || "").trim();
+            draft.timesPerWeekday = [flat, flat, flat, flat, flat, flat, flat];
+          } else {
+            draft.timesPerWeekday = ["", "", "", "", "", "", ""];
+          }
+          this._render();
+        } else if (field === "timesPerWeekday") {
+          // Per-weekday row input. data-day-index identifies which
+          // weekday slot to write to (0=Mon..6=Sun).
+          const idx = parseInt(e.currentTarget.dataset.dayIndex, 10);
+          if (!Array.isArray(draft.timesPerWeekday)) {
+            draft.timesPerWeekday = ["", "", "", "", "", "", ""];
+          }
+          if (idx >= 0 && idx <= 6) {
+            draft.timesPerWeekday[idx] = e.currentTarget.value;
           }
         } else {
           const value = e.currentTarget.value;

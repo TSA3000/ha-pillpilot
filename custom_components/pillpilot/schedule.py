@@ -59,6 +59,7 @@ from .const import (
     CONF_MED_RRULE,
     CONF_MED_SCHEDULE_TYPE,
     CONF_MED_TIMES,
+    CONF_MED_TIMES_PER_WEEKDAY,
     FREQ_MONTHLY,
     FREQ_WEEKLY,
     RRULE_TO_WEEKDAY,
@@ -270,10 +271,13 @@ def migrate_v1_to_v2_schedule(prescription: dict[str, Any]) -> dict[str, Any]:
 
     # New fields default to absent / null. Cycle and ends_on didn't
     # exist in v0.1.x so they're always None for migrated data.
+    # times_per_weekday (added in v0.2.0-beta3) similarly defaults to
+    # None — legacy prescriptions use the flat ``times`` field.
     prescription.setdefault(CONF_MED_ENDS_ON, None)
     prescription.setdefault(CONF_MED_CYCLE_ANCHOR, None)
     prescription.setdefault(CONF_MED_CYCLE_ON_DAYS, None)
     prescription.setdefault(CONF_MED_CYCLE_OFF_DAYS, None)
+    prescription.setdefault(CONF_MED_TIMES_PER_WEEKDAY, None)
 
     # Drop legacy keys so the rest of the codebase only ever sees
     # canonical v0.2.0 shape — no defensive ``if frequency in ...``
@@ -307,6 +311,13 @@ class Schedule:
     cycle_on_days: int | None = None
     cycle_off_days: int | None = None
     ends_on: date | None = None  # informational; UNTIL is in the rrule too
+    # Per-weekday time overrides. None = "simple mode" — every firing
+    # day uses the flat ``times`` field above. When set, it's a tuple
+    # of 7 inner tuples indexed Mon=0..Sun=6, each holding the times
+    # for that weekday. Empty inner tuple means "no doses on that
+    # weekday even if the frequency would otherwise fire" (skip-day
+    # semantics, useful for things like daily-except-Sunday).
+    times_per_weekday: tuple[tuple[time, ...], ...] | None = None
 
     # ----- internal -----------------------------------------------------
 
@@ -351,11 +362,29 @@ class Schedule:
     def occurrences_on(
         self, d: date, tz: tzinfo | None = None
     ) -> list[datetime]:
-        """All scheduled datetimes on the given date, sorted ascending."""
+        """All scheduled datetimes on the given date, sorted ascending.
+
+        When ``times_per_weekday`` is set, the times for ``d`` come from
+        ``times_per_weekday[d.weekday()]`` — that's the override channel
+        for cases like "8:00 weekdays, 10:00 weekends" or "skip Sunday."
+        An empty inner tuple means no doses fire on that weekday, even
+        though ``matches_date(d)`` may have returned True. This is
+        intentional: ``matches_date`` controls firing dates per the rrule;
+        ``times_per_weekday`` carves out times-of-day on those dates.
+
+        When ``times_per_weekday`` is None (the default), every firing
+        date uses the flat ``times`` list — the original v0.2.0
+        behavior, unchanged.
+        """
         if not self.matches_date(d):
             return []
+        if self.times_per_weekday is not None:
+            applicable_times = self.times_per_weekday[d.weekday()]
+        else:
+            applicable_times = self.times
         return sorted(
-            datetime.combine(d, t).replace(tzinfo=tz) for t in self.times
+            datetime.combine(d, t).replace(tzinfo=tz)
+            for t in applicable_times
         )
 
     def next_after(
@@ -412,6 +441,27 @@ class Schedule:
             hh, mm = t_str.split(":")
             times.append(time(int(hh), int(mm)))
 
+        # Parse the per-weekday override if present. Storage shape is
+        # a list of 7 lists of HH:MM strings (Mon=0..Sun=6); empty
+        # inner list = no doses on that weekday. None at the top level
+        # = simple mode (use flat ``times`` instead). Bad shapes
+        # (wrong length, malformed times) silently fall back to None
+        # rather than crashing — defensive against hand-edited storage.
+        tpw_raw = med.get(CONF_MED_TIMES_PER_WEEKDAY)
+        times_per_weekday: tuple[tuple[time, ...], ...] | None = None
+        if isinstance(tpw_raw, list) and len(tpw_raw) == 7:
+            try:
+                parsed_rows: list[tuple[time, ...]] = []
+                for row in tpw_raw:
+                    row_times: list[time] = []
+                    for t_str in row or []:
+                        hh, mm = str(t_str).split(":")
+                        row_times.append(time(int(hh), int(mm)))
+                    parsed_rows.append(tuple(row_times))
+                times_per_weekday = tuple(parsed_rows)
+            except (ValueError, TypeError, AttributeError):
+                times_per_weekday = None
+
         cycle_anchor = _parse_iso_date(med.get(CONF_MED_CYCLE_ANCHOR))
         ends_on = _parse_iso_date(med.get(CONF_MED_ENDS_ON))
 
@@ -424,6 +474,7 @@ class Schedule:
             cycle_on_days=med.get(CONF_MED_CYCLE_ON_DAYS),
             cycle_off_days=med.get(CONF_MED_CYCLE_OFF_DAYS),
             ends_on=ends_on,
+            times_per_weekday=times_per_weekday,
         )
 
 

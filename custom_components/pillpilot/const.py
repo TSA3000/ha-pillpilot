@@ -41,6 +41,7 @@ MED_TYPE_UNIT_LABELS = {
 CONF_MED_TIMES = "times"
 CONF_MED_DAYS = "days"                      # weekday ints 0-6, used by weekly
 CONF_MED_DAYS_OF_MONTH = "days_of_month"    # ints 1-31, used by monthly
+CONF_MED_INTERVAL_DAYS = "interval_days"    # int >= 2, used by interval
 CONF_MED_FREQUENCY = "frequency"            # "daily" | "weekly" | "monthly"
 CONF_MED_REMIND_WINDOW = "remind_window_minutes"
 
@@ -56,13 +57,18 @@ CONF_PRESCRIPTION_ID = "id"
 
 # Frequency values — LEGACY pre-v0.2.0 schema. Kept only for the
 # migration helper (`migrate_v1_to_v2_schedule` in schedule.py) which
-# converts existing prescriptions to the new RRULE-based shape. The
-# rest of the codebase uses CONF_MED_RRULE + CONF_MED_SCHEDULE_TYPE.
+# converts existing prescriptions to the new RRULE-based shape, AND
+# as the form-input vocabulary the panel sends to the validator
+# (panel UI still uses these strings; validator translates to the
+# canonical `schedule_type` + `rrule` shape on save). Both layers
+# disappear at v1.0.0 when the form switches to schedule_type
+# directly.
 # REMOVE AT v1.0.0 along with the migration helper.
 FREQ_DAILY = "daily"
 FREQ_WEEKLY = "weekly"
 FREQ_MONTHLY = "monthly"
-ALL_FREQUENCIES = (FREQ_DAILY, FREQ_WEEKLY, FREQ_MONTHLY)
+FREQ_INTERVAL = "interval"
+ALL_FREQUENCIES = (FREQ_DAILY, FREQ_WEEKLY, FREQ_MONTHLY, FREQ_INTERVAL)
 
 # v0.2.0 schedule schema — RRULE is the source of truth at rest;
 # schedule_type tells the panel UI which mode to render. RRULE handles
@@ -75,6 +81,11 @@ CONF_MED_ENDS_ON = "ends_on"  # ISO date "YYYY-MM-DD" or None — course end
 CONF_MED_CYCLE_ANCHOR = "cycle_anchor"        # ISO date or None
 CONF_MED_CYCLE_ON_DAYS = "cycle_on_days"      # int or None
 CONF_MED_CYCLE_OFF_DAYS = "cycle_off_days"    # int or None
+# times_per_weekday: list of 7 lists (Mon=0..Sun=6), each holding HH:MM
+# strings. None means "simple mode" — fall through to the flat `times`
+# field, which applies every firing day. Empty inner list means "no
+# doses on that weekday even if the frequency would fire."
+CONF_MED_TIMES_PER_WEEKDAY = "times_per_weekday"
 
 SCHEDULE_TYPE_DAILY = "daily"            # FREQ=DAILY
 SCHEDULE_TYPE_WEEKLY = "weekly"          # FREQ=WEEKLY;BYDAY=...

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.0-beta3] — 2026-05-09
+
+Adds three schedule shapes the old engine couldn't express. UI lives in the prescription Add/Edit modal.
+
+- New: **Every N days** mode. Pick "Every N days" in the Frequency dropdown, set the interval (2 or more). Rhythm survives month boundaries — every-other-day starting May 30 fires May 30, Jun 1, Jun 3, etc., not "May 30, then resets to Jun 1, Jun 3".
+- New: **End date** field. Optional, available for any frequency. Useful for antibiotic courses ("daily for 7 days") or any time-limited prescription.
+- New: **Different times per day of week**. Optional toggle in the prescription form. When enabled, replaces the single "Times of day" field with seven per-weekday rows (Mon … Sun). Set Mon-Fri to `08:00` and Sat-Sun to `10:00` for a "later on weekends" rhythm in one prescription instead of two. Leave a row blank to skip doses on that weekday entirely.
+- Validation: weekly without selected days now surfaces `days_required` (was missed in beta1's hardening). Interval mode requires an interval between 2 and 365.
+
 ## [0.2.0-beta2] — 2026-05-09
 
 Fixes a crash in v0.2.0-beta1 that hid the side panel after upgrading from v0.1.5. v0.2.0-beta1 is retracted.

@@ -39,6 +39,7 @@ from .const import (
     CONF_MED_RRULE,
     CONF_MED_SCHEDULE_TYPE,
     CONF_MED_TIMES,
+    CONF_MED_TIMES_PER_WEEKDAY,
     CONF_MED_TOTAL_DOSE_MG,
     CONF_MED_TYPE,
     CONF_MED_UNIT_COUNT,
@@ -115,6 +116,15 @@ class PrescriptionState:
     last_taken_at: datetime | None
     state: str  # one of STATE_DUE / STATE_TAKEN / STATE_MISSED / STATE_SKIPPED / STATE_UPCOMING
     today_doses: list[dict[str, Any]] = field(default_factory=list)
+    # v0.2.0 schedule modes beyond legacy daily/weekly/monthly. None
+    # for prescriptions on those legacy modes; populated for interval
+    # mode (and later cycle / custom modes).
+    interval_days: int | None = None
+    ends_on: str | None = None  # ISO "YYYY-MM-DD" or None
+    # times_per_weekday is the WS-friendly shape (list of 7 lists of
+    # HH:MM strings) — what panel.js consumes via sensor attributes.
+    # None means simple mode (use ``times`` for every firing day).
+    times_per_weekday: list[list[str]] | None = None
 
 
 @dataclass
@@ -689,16 +699,32 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
             prescription.get(CONF_MED_SCHEDULE_TYPE) or SCHEDULE_TYPE_DAILY
         )
         friendly = rrule_to_friendly(stored_rrule)
+        # Daily / weekly / monthly / interval map 1:1 to the friendly
+        # frequency the panel expects. Cycle and custom modes fall
+        # back to "daily" until beta4/beta5 wire them into the panel
+        # UI; their RRULE-based dose timing is unaffected because the
+        # coordinator's Schedule object reads the canonical RRULE
+        # directly, not through this friendly translation.
         if stored_schedule_type in (
             SCHEDULE_TYPE_DAILY,
             SCHEDULE_TYPE_WEEKLY,
             SCHEDULE_TYPE_MONTHLY,
+            SCHEDULE_TYPE_INTERVAL,
         ):
             derived_frequency = stored_schedule_type
         else:
             derived_frequency = SCHEDULE_TYPE_DAILY
         derived_days = friendly["weekdays"] or list(range(7))
         derived_doms = friendly["days_of_month"] or []
+        # interval_days is encoded inside the RRULE (as INTERVAL=N)
+        # rather than stored as a separate field — extracted here.
+        # ends_on is stored separately as ISO string for the panel,
+        # mirroring what's also in the RRULE's UNTIL.
+        derived_interval = friendly["interval_days"]
+        derived_ends_on = prescription.get(CONF_MED_ENDS_ON)
+        # times_per_weekday is stored as list-of-7-lists or None.
+        # Pass through verbatim to the WS — panel reads it as JSON.
+        derived_tpw = prescription.get(CONF_MED_TIMES_PER_WEEKDAY)
 
         return PrescriptionState(
             id=prescription.get(CONF_PRESCRIPTION_ID, ""),
@@ -725,6 +751,9 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
             today_doses=self._today_doses_for(
                 med_id, prescription, person_id, now, scheduled_today
             ),
+            interval_days=derived_interval,
+            ends_on=derived_ends_on,
+            times_per_weekday=derived_tpw,
         )
 
     @staticmethod

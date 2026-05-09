@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from datetime import date
 from typing import Any
 
 import voluptuous as vol
@@ -56,6 +57,7 @@ from .const import (
     CONF_MED_DOSE,
     CONF_MED_ENDS_ON,
     CONF_MED_FREQUENCY,
+    CONF_MED_INTERVAL_DAYS,
     CONF_MED_NAME,
     CONF_MED_NOTES,
     CONF_MED_NPL_ID,
@@ -66,6 +68,7 @@ from .const import (
     CONF_MED_RRULE,
     CONF_MED_SCHEDULE_TYPE,
     CONF_MED_TIMES,
+    CONF_MED_TIMES_PER_WEEKDAY,
     CONF_MED_TOTAL_DOSE_MG,
     CONF_MED_TYPE,
     CONF_MED_UNIT_COUNT,
@@ -79,6 +82,7 @@ from .const import (
     DOMAIN,
     ALL_FREQUENCIES,
     FREQ_DAILY,
+    FREQ_INTERVAL,
     FREQ_MONTHLY,
     FREQ_WEEKLY,
     MED_TYPE_DROPS,
@@ -86,6 +90,7 @@ from .const import (
     MED_TYPE_PILL,
     PANEL_VISIBILITY_OPTIONS,
     SCHEDULE_TYPE_DAILY,
+    SCHEDULE_TYPE_INTERVAL,
     SCHEDULE_TYPE_MONTHLY,
     SCHEDULE_TYPE_WEEKLY,
 )
@@ -147,6 +152,82 @@ def _strip_or_none(value) -> str | None:
         return None
     s = str(value).strip()
     return s or None
+
+
+def _parse_interval_days(raw) -> tuple[int | None, str | None]:
+    """Parse and range-check an interval_days value.
+
+    Returns (n, None) on success, (None, error_key) on failure.
+    Empty/None is rejected because interval mode requires an
+    explicit interval — the form-level dispatch only calls this
+    helper when ``frequency == "interval"``. Range 2..365 keeps
+    sensible bounds (2 = every other day, 365 = annual).
+    """
+    if raw is None or raw == "":
+        return None, "interval_days_required"
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None, "interval_days_invalid"
+    if n < 2 or n > 365:
+        return None, "interval_days_range"
+    return n, None
+
+
+def _parse_times_per_weekday(raw) -> tuple[list[list[str]] | None, str | None]:
+    """Parse and validate the per-weekday times override.
+
+    Input shape (from form): a list of 7 entries, each a list or
+    comma-separated string of HH:MM times. Mon=0..Sun=6.
+    Output shape (for storage): a list of 7 lists of zero-padded
+    "HH:MM" strings. None means "no override — fall back to flat
+    times" (legacy / simple mode).
+
+    Empty inner lists are allowed — they mean "no doses on that
+    weekday" (skip-day semantics). Bad formats and wrong lengths
+    surface error keys for the UI to render.
+    """
+    if raw is None:
+        return None, None
+    if not isinstance(raw, list):
+        return None, "times_per_weekday_invalid"
+    if len(raw) != 7:
+        return None, "times_per_weekday_length"
+
+    out: list[list[str]] = []
+    for entry in raw:
+        if isinstance(entry, str):
+            iter_strs = entry.split(",")
+        elif isinstance(entry, list):
+            iter_strs = entry
+        elif entry is None:
+            iter_strs = []
+        else:
+            return None, "times_per_weekday_invalid"
+        normalized, err = _normalize_times(iter_strs)
+        if err is not None:
+            # _normalize_times returns "times_invalid" on bad HH:MM.
+            # Surface a per-weekday-specific key so the UI can pin
+            # the error to the right row.
+            return None, "times_per_weekday_time_invalid"
+        out.append(normalized)
+    return out, None
+
+
+def _parse_ends_on(raw) -> tuple[date | None, str | None]:
+    """Parse an optional ISO-format end date.
+
+    Universal across all frequency modes — empty/None means "no end
+    date, run forever". Returns (None, None) for the empty case so
+    the caller can pass the date through to ``schedule_to_rrule``
+    unconditionally (it accepts ``ends_on=None`` as "no UNTIL").
+    """
+    if raw is None or raw == "":
+        return None, None
+    try:
+        return date.fromisoformat(str(raw)), None
+    except (TypeError, ValueError):
+        return None, "ends_on_invalid"
 
 
 def validate_medicine_input(
@@ -269,6 +350,43 @@ def validate_medicine_input(
     if freq == FREQ_WEEKLY and not days_parsed:
         return None, {CONF_MED_DAYS: "days_required"}
 
+    # Parse interval_days — only used when frequency=interval. Bounded
+    # 2..365 in _parse_interval_days. Empty or missing triggers
+    # "interval_days_required" only when the form picked interval mode
+    # (other modes don't read this field at all).
+    interval_days_parsed: int | None = None
+    if freq == FREQ_INTERVAL:
+        interval_days_parsed, ival_err = _parse_interval_days(
+            user_input.get(CONF_MED_INTERVAL_DAYS)
+        )
+        if ival_err is not None:
+            return None, {CONF_MED_INTERVAL_DAYS: ival_err}
+
+    # Parse optional end date — universal, applies to any frequency.
+    # Empty/None is the common case (no end date). ISO format expected
+    # ("YYYY-MM-DD"), which is what HA's date selectors emit.
+    ends_on_parsed, ends_err = _parse_ends_on(user_input.get(CONF_MED_ENDS_ON))
+    if ends_err is not None:
+        return None, {CONF_MED_ENDS_ON: ends_err}
+
+    # Parse optional per-weekday times override — universal across
+    # every frequency mode. None = flat ``times`` applies every
+    # firing day (simple mode). Set = list of 7 lists of HH:MM
+    # strings indexed Mon=0..Sun=6.
+    #
+    # Two input shapes converge here:
+    #   * Panel form sends ``CONF_MED_TIMES_PER_WEEKDAY`` directly as
+    #     a list of 7 entries (or omits it for simple mode).
+    #   * HA Settings form sends 7 separate string fields (one per
+    #     weekday). We consolidate them into the list shape if the
+    #     canonical key isn't present and any per-weekday field is.
+    tpw_raw = user_input.get(CONF_MED_TIMES_PER_WEEKDAY)
+    if tpw_raw is None and any(user_input.get(k) for k in WEEKDAY_FORM_KEYS):
+        tpw_raw = [user_input.get(k, "") for k in WEEKDAY_FORM_KEYS]
+    tpw_parsed, tpw_err = _parse_times_per_weekday(tpw_raw)
+    if tpw_err is not None:
+        return None, {CONF_MED_TIMES_PER_WEEKDAY: tpw_err}
+
     # Parse times — accept comma-string form, validate HH:MM format,
     # zero-pad single-digit hours so downstream code sees canonical form.
     times_normalized, times_err = _normalize_times(
@@ -277,18 +395,29 @@ def validate_medicine_input(
     if times_err is not None:
         return None, {CONF_MED_TIMES: times_err}
 
-    # v0.2.0+: storage is RRULE-based. The form still sends friendly
-    # frequency/days/days_of_month, validated above; we translate
-    # to canonical RRULE here. Legacy keys are dropped from the
-    # output dict — the rest of the codebase only handles new shape.
+    # v0.2.0+: storage is RRULE-based. The form sends friendly
+    # frequency/days/days_of_month/interval_days, validated above; we
+    # translate to canonical RRULE here. Legacy keys are dropped from
+    # the output dict — the rest of the codebase only handles new shape.
     if freq == FREQ_WEEKLY:
-        rrule_str = schedule_to_rrule(SCHEDULE_TYPE_WEEKLY, weekdays=days_parsed)
+        rrule_str = schedule_to_rrule(
+            SCHEDULE_TYPE_WEEKLY, weekdays=days_parsed, ends_on=ends_on_parsed
+        )
         schedule_type = SCHEDULE_TYPE_WEEKLY
     elif freq == FREQ_MONTHLY:
-        rrule_str = schedule_to_rrule(SCHEDULE_TYPE_MONTHLY, days_of_month=doms)
+        rrule_str = schedule_to_rrule(
+            SCHEDULE_TYPE_MONTHLY, days_of_month=doms, ends_on=ends_on_parsed
+        )
         schedule_type = SCHEDULE_TYPE_MONTHLY
+    elif freq == FREQ_INTERVAL:
+        rrule_str = schedule_to_rrule(
+            SCHEDULE_TYPE_INTERVAL,
+            interval_days=interval_days_parsed,
+            ends_on=ends_on_parsed,
+        )
+        schedule_type = SCHEDULE_TYPE_INTERVAL
     else:
-        rrule_str = "FREQ=DAILY"
+        rrule_str = schedule_to_rrule(SCHEDULE_TYPE_DAILY, ends_on=ends_on_parsed)
         schedule_type = SCHEDULE_TYPE_DAILY
 
     prescription = {
@@ -302,10 +431,13 @@ def validate_medicine_input(
         CONF_MED_SCHEDULE_TYPE: schedule_type,
         CONF_MED_TIMES: times_normalized,
         CONF_MED_REMIND_WINDOW: int(user_input[CONF_MED_REMIND_WINDOW]),
-        # New fields (Phase 2/3 will populate from form). Stored as
-        # None now so the storage shape is uniform across all
-        # prescriptions regardless of when they were created.
-        CONF_MED_ENDS_ON: None,
+        # ends_on stored as ISO string; UNTIL is also encoded in
+        # rrule so the engine sees it directly. Storing the string
+        # here keeps the friendly value available for the panel
+        # without re-parsing UNTIL on every read.
+        CONF_MED_ENDS_ON: ends_on_parsed.isoformat() if ends_on_parsed else None,
+        CONF_MED_TIMES_PER_WEEKDAY: tpw_parsed,
+        # Cycle fields stay None until beta4 wires the cycle UI.
         CONF_MED_CYCLE_ANCHOR: None,
         CONF_MED_CYCLE_ON_DAYS: None,
         CONF_MED_CYCLE_OFF_DAYS: None,
@@ -601,18 +733,57 @@ def validate_medicine_input_multi(
             prescription_errors.append(p_errors)
             continue
 
-        # Build canonical RRULE from validated friendly fields. Same
-        # logic as the single-prescription validator above; kept
-        # inline rather than extracted to a helper to make the
-        # output construction self-contained for readability.
+        # Parse interval_days — only used when frequency=interval.
+        interval_days_parsed: int | None = None
+        if freq == FREQ_INTERVAL:
+            interval_days_parsed, ival_err = _parse_interval_days(
+                p.get(CONF_MED_INTERVAL_DAYS)
+            )
+            if ival_err is not None:
+                p_errors[CONF_MED_INTERVAL_DAYS] = ival_err
+                prescription_errors.append(p_errors)
+                continue
+
+        # Parse optional end date — universal across all frequencies.
+        ends_on_parsed, ends_err = _parse_ends_on(p.get(CONF_MED_ENDS_ON))
+        if ends_err is not None:
+            p_errors[CONF_MED_ENDS_ON] = ends_err
+            prescription_errors.append(p_errors)
+            continue
+
+        # Parse optional per-weekday times override — universal.
+        # See single validator for the two-input-shape rationale.
+        tpw_raw = p.get(CONF_MED_TIMES_PER_WEEKDAY)
+        if tpw_raw is None and any(p.get(k) for k in WEEKDAY_FORM_KEYS):
+            tpw_raw = [p.get(k, "") for k in WEEKDAY_FORM_KEYS]
+        tpw_parsed, tpw_err = _parse_times_per_weekday(tpw_raw)
+        if tpw_err is not None:
+            p_errors[CONF_MED_TIMES_PER_WEEKDAY] = tpw_err
+            prescription_errors.append(p_errors)
+            continue
+
+        # Build canonical RRULE from validated friendly fields.
         if freq == FREQ_WEEKLY:
-            rrule_str = schedule_to_rrule(SCHEDULE_TYPE_WEEKLY, weekdays=days)
+            rrule_str = schedule_to_rrule(
+                SCHEDULE_TYPE_WEEKLY, weekdays=days, ends_on=ends_on_parsed
+            )
             schedule_type = SCHEDULE_TYPE_WEEKLY
         elif freq == FREQ_MONTHLY:
-            rrule_str = schedule_to_rrule(SCHEDULE_TYPE_MONTHLY, days_of_month=doms)
+            rrule_str = schedule_to_rrule(
+                SCHEDULE_TYPE_MONTHLY, days_of_month=doms, ends_on=ends_on_parsed
+            )
             schedule_type = SCHEDULE_TYPE_MONTHLY
+        elif freq == FREQ_INTERVAL:
+            rrule_str = schedule_to_rrule(
+                SCHEDULE_TYPE_INTERVAL,
+                interval_days=interval_days_parsed,
+                ends_on=ends_on_parsed,
+            )
+            schedule_type = SCHEDULE_TYPE_INTERVAL
         else:
-            rrule_str = "FREQ=DAILY"
+            rrule_str = schedule_to_rrule(
+                SCHEDULE_TYPE_DAILY, ends_on=ends_on_parsed
+            )
             schedule_type = SCHEDULE_TYPE_DAILY
 
         validated_prescriptions.append({
@@ -628,7 +799,8 @@ def validate_medicine_input_multi(
             CONF_MED_REMIND_WINDOW: int(
                 p.get(CONF_MED_REMIND_WINDOW) or DEFAULT_REMIND_WINDOW
             ),
-            CONF_MED_ENDS_ON: None,
+            CONF_MED_ENDS_ON: ends_on_parsed.isoformat() if ends_on_parsed else None,
+            CONF_MED_TIMES_PER_WEEKDAY: tpw_parsed,
             CONF_MED_CYCLE_ANCHOR: None,
             CONF_MED_CYCLE_ON_DAYS: None,
             CONF_MED_CYCLE_OFF_DAYS: None,
@@ -692,7 +864,20 @@ FREQUENCY_OPTIONS = [
     {"value": FREQ_DAILY, "label": "Daily — every day"},
     {"value": FREQ_WEEKLY, "label": "Weekly — on selected weekdays"},
     {"value": FREQ_MONTHLY, "label": "Monthly — on selected days of the month"},
+    {"value": FREQ_INTERVAL, "label": "Every N days — every other day, every 3 days, etc."},
 ]
+
+# HA Settings form renders per-weekday times as 7 separate string
+# fields (one per weekday). The panel form sends the canonical list
+# shape directly. Both paths converge in the validator: if the
+# canonical list is missing but any of these 7 keys is set, we
+# consolidate them into the list shape before parsing. Order matches
+# Mon=0..Sun=6 used everywhere else in this codebase.
+WEEKDAY_FORM_KEYS = (
+    "times_mon", "times_tue", "times_wed", "times_thu",
+    "times_fri", "times_sat", "times_sun",
+)
+WEEKDAY_LABELS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 MED_TYPE_OPTIONS = [
     {"value": MED_TYPE_PILL, "label": "Pill / tablet"},
@@ -1033,26 +1218,52 @@ class MedicineSubentryFlow(ConfigSubentryFlow):
         stored_schedule_type = first.get(CONF_MED_SCHEDULE_TYPE)
         if stored_rrule:
             friendly = rrule_to_friendly(stored_rrule)
-            # Daily/weekly/monthly map 1:1 to the legacy frequency
-            # form value. Interval/cycle/custom modes don't have UI
-            # in this form yet — they fall back to daily so the form
-            # opens cleanly; users edit those modes through the
-            # panel sub-modal once Phase 2/3 lands.
+            # Daily / weekly / monthly / interval map 1:1 to the form
+            # frequency value. Cycle and custom modes don't have UI
+            # in HA Settings yet — they fall back to daily so the form
+            # opens cleanly; users edit those modes through the panel
+            # sub-modal once beta4/beta5 wire the UI.
             if stored_schedule_type in (
                 SCHEDULE_TYPE_DAILY,
                 SCHEDULE_TYPE_WEEKLY,
                 SCHEDULE_TYPE_MONTHLY,
+                SCHEDULE_TYPE_INTERVAL,
             ):
                 form_frequency = stored_schedule_type
             else:
                 form_frequency = SCHEDULE_TYPE_DAILY
             form_days = friendly["weekdays"] or list(range(7))
             form_doms = friendly["days_of_month"] or []
+            form_interval = friendly["interval_days"] or 2
         else:
             # New medicine — historical defaults.
             form_frequency = FREQ_DAILY
             form_days = list(range(7))
             form_doms = []
+            form_interval = 2
+
+        # ends_on: stored as ISO string ("YYYY-MM-DD") or None. Form
+        # field is also string so just pass through. None becomes ""
+        # so voluptuous's str validator doesn't reject it.
+        form_ends_on = first.get(CONF_MED_ENDS_ON) or ""
+
+        # Per-weekday defaults: 7 string fields, one per weekday. If
+        # stored as None (simple mode), all 7 default to "" — meaning
+        # "use the flat 'Times of day' for all weekdays." If stored
+        # as the per-weekday list, each form field gets its weekday's
+        # comma-joined times. Empty entries stay empty (= skip that
+        # weekday, panel-only feature; HA Settings users with empty
+        # entries don't accidentally trigger skip-day on first save
+        # because the validator falls back to simple mode when ALL 7
+        # are empty).
+        stored_tpw = first.get(CONF_MED_TIMES_PER_WEEKDAY)
+        weekday_defaults: dict[str, str] = {}
+        if isinstance(stored_tpw, list) and len(stored_tpw) == 7:
+            for key, row in zip(WEEKDAY_FORM_KEYS, stored_tpw):
+                weekday_defaults[key] = ",".join(row or [])
+        else:
+            for key in WEEKDAY_FORM_KEYS:
+                weekday_defaults[key] = ""
 
         return {
             CONF_MED_NAME: existing.get(CONF_MED_NAME) or "",
@@ -1064,15 +1275,13 @@ class MedicineSubentryFlow(ConfigSubentryFlow):
             CONF_MED_VARUNUMMER: existing.get(CONF_MED_VARUNUMMER) or "",
             CONF_MED_ATC_CODE: existing.get(CONF_MED_ATC_CODE) or "",
             CONF_MED_PERSON: first.get(CONF_MED_PERSON) or None,
-            # defaults for NEW medicines changed from
-            # weekly + 08:00 to daily + 07:00 — matches the most
-            # common case (a single morning pill) better, so adding
-            # a medicine takes fewer clicks. Existing medicines
-            # round-trip via friendly translation above.
             CONF_MED_FREQUENCY: form_frequency,
             CONF_MED_TIMES: ",".join(first.get(CONF_MED_TIMES) or ["07:00"]),
             CONF_MED_DAYS: [str(d) for d in form_days],
             CONF_MED_DAYS_OF_MONTH: ",".join(str(d) for d in form_doms),
+            CONF_MED_INTERVAL_DAYS: form_interval,
+            CONF_MED_ENDS_ON: form_ends_on,
+            **weekday_defaults,
             CONF_MED_REMIND_WINDOW: first.get(CONF_MED_REMIND_WINDOW)
             or DEFAULT_REMIND_WINDOW,
         }
@@ -1175,6 +1384,52 @@ class MedicineSubentryFlow(ConfigSubentryFlow):
                 vol.Optional(
                     CONF_MED_DAYS_OF_MONTH,
                     default=defaults[CONF_MED_DAYS_OF_MONTH],
+                ): str,
+                vol.Optional(
+                    CONF_MED_INTERVAL_DAYS,
+                    default=defaults[CONF_MED_INTERVAL_DAYS],
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=2, max=365, step=1, mode=NumberSelectorMode.BOX
+                    )
+                ),
+                # ends_on is intentionally a free-text str field rather
+                # than a DateSelector — DateSelector rejects an empty
+                # string, but the universal-but-optional design needs
+                # an explicit "no end date" representation, and an
+                # empty string is the cleanest one. Validator parses
+                # ISO format ("YYYY-MM-DD") and surfaces ends_on_invalid
+                # on bad input.
+                vol.Optional(
+                    CONF_MED_ENDS_ON, default=defaults[CONF_MED_ENDS_ON]
+                ): str,
+                # Per-weekday times: 7 separate fields, one per weekday
+                # (Mon … Sun). Each is a comma-separated HH:MM string.
+                # Leave all 7 blank to use the simple "Times of day"
+                # field above for every weekday. Filling in any of
+                # these switches the prescription to per-weekday mode;
+                # blank fields in per-weekday mode mean no doses on
+                # that weekday (skip-day semantics).
+                vol.Optional(
+                    "times_mon", default=defaults.get("times_mon", "")
+                ): str,
+                vol.Optional(
+                    "times_tue", default=defaults.get("times_tue", "")
+                ): str,
+                vol.Optional(
+                    "times_wed", default=defaults.get("times_wed", "")
+                ): str,
+                vol.Optional(
+                    "times_thu", default=defaults.get("times_thu", "")
+                ): str,
+                vol.Optional(
+                    "times_fri", default=defaults.get("times_fri", "")
+                ): str,
+                vol.Optional(
+                    "times_sat", default=defaults.get("times_sat", "")
+                ): str,
+                vol.Optional(
+                    "times_sun", default=defaults.get("times_sun", "")
                 ): str,
                 vol.Required(
                     CONF_MED_REMIND_WINDOW,
