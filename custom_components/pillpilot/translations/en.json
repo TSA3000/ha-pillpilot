@@ -57,6 +57,15 @@
             "times": "Times of day, comma-separated (HH:MM)",
             "days": "Days of week (Weekly only)",
             "days_of_month": "Days of month, comma-separated 1–31 (Monthly only)",
+            "interval_days": "Interval in days (Every-N-days only, 2–365)",
+            "ends_on": "End date (optional, YYYY-MM-DD)",
+            "times_mon": "Mon — times (leave blank to use 'Times of day')",
+            "times_tue": "Tue — times (leave blank to use 'Times of day')",
+            "times_wed": "Wed — times (leave blank to use 'Times of day')",
+            "times_thu": "Thu — times (leave blank to use 'Times of day')",
+            "times_fri": "Fri — times (leave blank to use 'Times of day')",
+            "times_sat": "Sat — times (leave blank to use 'Times of day')",
+            "times_sun": "Sun — times (leave blank to use 'Times of day')",
             "remind_window_minutes": "Mark as missed after (minutes)"
           }
         },
@@ -77,6 +86,15 @@
             "times": "Times of day, comma-separated (HH:MM)",
             "days": "Days of week (Weekly only)",
             "days_of_month": "Days of month, comma-separated 1–31 (Monthly only)",
+            "interval_days": "Interval in days (Every-N-days only, 2–365)",
+            "ends_on": "End date (optional, YYYY-MM-DD)",
+            "times_mon": "Mon — times (leave blank to use 'Times of day')",
+            "times_tue": "Tue — times (leave blank to use 'Times of day')",
+            "times_wed": "Wed — times (leave blank to use 'Times of day')",
+            "times_thu": "Thu — times (leave blank to use 'Times of day')",
+            "times_fri": "Fri — times (leave blank to use 'Times of day')",
+            "times_sat": "Sat — times (leave blank to use 'Times of day')",
+            "times_sun": "Sun — times (leave blank to use 'Times of day')",
             "remind_window_minutes": "Mark as missed after (minutes)"
           }
         }

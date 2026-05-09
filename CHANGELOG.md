@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.0-beta3.2] — 2026-05-09
+
+Hotfix for beta3.1.
+
+- Fix: HA Settings → Reconfigure medicine form was rendering raw field keys (`interval_days`, `ends_on`, `times_mon` …) instead of human labels for the new beta3 fields. Added the missing entries to `strings.json`, `translations/en.json`, and `translations/sv.json` for both the `user` and `reconfigure` steps. Existing prescriptions are unaffected.
+
 ## [0.2.0-beta3.1] — 2026-05-09
 
 Hotfix for beta3.
