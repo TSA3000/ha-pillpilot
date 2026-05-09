@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.2] — 2026-05-09
+
+UX bugfix release. Drop-in upgrade from 0.2.1.
+
+- **Empty schedules now rejected.** A prescription with no dose times in simple mode, or with all-empty rows in per-weekday mode, is rejected at validation. Previously such prescriptions were saved silently and never fired reminders. New translation keys `times_required` and `times_per_weekday_required` (en + sv).
+- **Modal closes on Escape.** Pressing Escape closes the prescription sub-modal first if open, otherwise the Add/Edit medicine modal. Suppressed during save so an in-flight request can't be dismissed.
+- **Backdrop click blocked during save.** Clicking outside the Add/Edit modal or sub-modal while a save is in progress no longer closes it. The Cancel and X buttons were already disabled during save; the backdrop now matches.
+
 ## [0.2.1] — 2026-05-09
 
 Security release. No data-shape changes; drop-in upgrade from 0.2.0.

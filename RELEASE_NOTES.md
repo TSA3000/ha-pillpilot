@@ -1,12 +1,12 @@
-# v0.2.1
+# v0.2.2
 
-> Security release. Drop-in upgrade from 0.2.0.
+> UX bugfix release. Drop-in upgrade from 0.2.1.
 
 ## What's fixed
 
-In multi-user HA setups, non-admin users could previously add, edit, or delete medicines via the panel's WebSocket API, and could call `pillpilot.refresh_medicines_database` with an arbitrary URL. Both paths are now admin-only. The URL field on the refresh service is also restricted to `http`/`https` schemes so it can't be pointed at `file://` or other local-resource schemes.
-
-Single-user installs are unaffected — admin-only is the same as the only user.
+- Prescriptions with no dose times — empty in simple mode, or per-weekday mode with all rows blank — now fail validation with a clear error. Previously they saved silently and never fired reminders.
+- The Add medicine / Edit medicine modal and its prescription sub-modal close on Escape. Suppressed during save so an in-flight request can't be dismissed.
+- The modal backdrop is no longer clickable while a save is in progress, matching the already-disabled Cancel and X buttons.
 
 ## Upgrading
 

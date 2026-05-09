@@ -1135,6 +1135,28 @@ class PillPilotPanel extends HTMLElement {
             .forEach((m) => m.classList.remove("open"));
         }
       };
+      // Escape closes whichever modal is on top. Sub-modal first if
+      // both are open. Suppressed during save so users can't dismiss
+      // a request that's already in flight (matches the disabled
+      // Cancel button + backdrop guard).
+      this._onKeydown = (e) => {
+        if (e.key !== "Escape") return;
+        if (this._editFormSaving) return;
+        if (this._personSubModal) {
+          this._closePrescriptionSubModal();
+          e.preventDefault();
+          return;
+        }
+        if (this._editingMedicineId) {
+          this._closeEditModal();
+          e.preventDefault();
+          return;
+        }
+        if (this._addingMedicine) {
+          this._closeAddModal();
+          e.preventDefault();
+        }
+      };
       if (this._debug) console.log("[PillPilot] constructed");
     } catch (e) {
       console.error("[PillPilot] constructor failed:", e);
@@ -1382,6 +1404,7 @@ class PillPilotPanel extends HTMLElement {
 
     document.addEventListener("visibilitychange", this._onVisibilityChange);
     document.addEventListener("click", this._onDocumentClick);
+    document.addEventListener("keydown", this._onKeydown);
   }
 
   disconnectedCallback() {
@@ -1392,6 +1415,7 @@ class PillPilotPanel extends HTMLElement {
     }
     document.removeEventListener("visibilitychange", this._onVisibilityChange);
     document.removeEventListener("click", this._onDocumentClick);
+    document.removeEventListener("keydown", this._onKeydown);
   }
 
   // --- data --------------------------------------------------------------
@@ -3085,6 +3109,7 @@ class PillPilotPanel extends HTMLElement {
     root.querySelectorAll('[data-action="close-edit-modal"]').forEach((el) => {
       el.addEventListener("click", (e) => {
         e.preventDefault();
+        if (this._editFormSaving) return;
         if (
           e.currentTarget === e.target ||
           e.currentTarget.classList.contains("modal-close-btn")
@@ -3096,6 +3121,7 @@ class PillPilotPanel extends HTMLElement {
     root.querySelectorAll('[data-action="close-add-modal"]').forEach((el) => {
       el.addEventListener("click", (e) => {
         e.preventDefault();
+        if (this._editFormSaving) return;
         if (
           e.currentTarget === e.target ||
           e.currentTarget.classList.contains("modal-close-btn")
@@ -3212,6 +3238,7 @@ class PillPilotPanel extends HTMLElement {
     root.querySelectorAll('[data-action="close-sub-modal"]').forEach((el) => {
       el.addEventListener("click", (e) => {
         e.preventDefault();
+        if (this._editFormSaving) return;
         if (
           e.currentTarget === e.target ||
           e.currentTarget.classList.contains("modal-close-btn") ||

@@ -149,10 +149,12 @@
         "interval_days_required": "Every-N-days frequency requires an interval (2 or more days).",
         "times_per_weekday_invalid": "Per-weekday times must be 7 entries (Mon to Sun), each as a comma-separated list of HH:MM times.",
         "times_per_weekday_length": "Per-weekday times must have exactly 7 entries (one for each weekday Mon to Sun).",
+        "times_per_weekday_required": "Per-weekday times need at least one weekday with a dose time.",
         "times_per_weekday_time_invalid": "Per-weekday times include a malformed entry. Use HH:MM format (e.g. '07:00').",
         "duplicate_prescription_id": "Two prescriptions share the same id. Each prescription must have a unique id.",
         "frequency_invalid": "Frequency must be one of: daily, weekly, monthly.",
         "times_invalid": "Times must be in HH:MM format (e.g. '07:00' or '7:00').",
+        "times_required": "Add at least one dose time.",
         "invalid_number": "Enter a valid number.",
         "invalid_type": "Type must be Pill, Drops, or Injection.",
         "name_required": "Medicine name is required."

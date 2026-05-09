@@ -396,6 +396,15 @@ def validate_medicine_input(
     if times_err is not None:
         return None, {CONF_MED_TIMES: times_err}
 
+    # Reject schedules that would never fire. Simple mode: at least one
+    # time required. Per-weekday mode: at least one weekday must carry
+    # at least one time (individual blank rows still mean skip-day).
+    if tpw_parsed is None:
+        if not times_normalized:
+            return None, {CONF_MED_TIMES: "times_required"}
+    elif not any(tpw_parsed):
+        return None, {CONF_MED_TIMES_PER_WEEKDAY: "times_per_weekday_required"}
+
     # v0.2.0+: storage is RRULE-based. The form sends friendly
     # frequency/days/days_of_month/interval_days, validated above; we
     # translate to canonical RRULE here. Legacy keys are dropped from
@@ -760,6 +769,18 @@ def validate_medicine_input_multi(
         tpw_parsed, tpw_err = _parse_times_per_weekday(tpw_raw)
         if tpw_err is not None:
             p_errors[CONF_MED_TIMES_PER_WEEKDAY] = tpw_err
+            prescription_errors.append(p_errors)
+            continue
+
+        # Reject schedules that would never fire. See single validator
+        # for rationale and per-weekday skip-day semantics.
+        if tpw_parsed is None:
+            if not times:
+                p_errors[CONF_MED_TIMES] = "times_required"
+                prescription_errors.append(p_errors)
+                continue
+        elif not any(tpw_parsed):
+            p_errors[CONF_MED_TIMES_PER_WEEKDAY] = "times_per_weekday_required"
             prescription_errors.append(p_errors)
             continue
 
