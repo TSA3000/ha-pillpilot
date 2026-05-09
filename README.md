@@ -136,7 +136,7 @@ All take a `medicine_id` (and optional `when` for retroactive marking). See `ser
 
 ## Architecture
 
-```text
+```
 custom_components/pillpilot/
 ├── __init__.py          entry setup, services, hot-reload listener
 ├── const.py             keys, defaults, event names

@@ -7,7 +7,7 @@ Two ways to manage your medicines — the **HA Settings** form and the **sidebar
 ## TL;DR
 
 | You want to … | Use the … |
-|---|---|
+| --- | --- |
 | Add a new medicine | HA Settings (it's the only place with the `+ Add medicine` button) |
 | Edit a medicine's schedule | Either, but the panel is faster and clearer |
 | Mark a dose as taken / skip / snooze | Sidebar panel |
@@ -108,7 +108,7 @@ If you set up the bundled `notify_dose` blueprint (see README), you'll get a pus
 ## Differences at a glance
 
 | Capability | HA Settings | Panel |
-|---|---|---|
+| --- | --- | --- |
 | Add a new medicine | ✓ | — |
 | Edit a medicine's identity, dose, schedule | ✓ | ✓ |
 | Mark a dose taken / skipped / snoozed | — | ✓ |

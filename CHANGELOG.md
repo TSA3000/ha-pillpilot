@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.5] — 2026-05-09
+
+Bugfix release. Drop-in upgrade from 0.2.4.
+
+- **HA Settings form labels.** Every field inside a section in the medicine reconfigure form (Identity, Identifiers, Schedule, Per-weekday) was rendering as its raw constant name — `days_of_month`, `interval_days`, `starts_on`, `ends_on`, `name`, `varunummer`, `times_mon`, etc. — instead of the human-readable label. Cause: the labels lived at `config_subentries.medicine.step.<step>.data.<field>` but HA looks them up under `sections.<section_name>.data.<field>` for fields inside a `section()`. Restructured all three translation files (`strings.json`, `translations/en.json`, `translations/sv.json`) to put each section's field labels in the right slot. Parity held at 178/178/178.
+
 ## [0.2.4] — 2026-05-09
 
 Fixes a long-standing bug in interval-mode scheduling and adds a configurable Start date. Drop-in upgrade from 0.2.2.

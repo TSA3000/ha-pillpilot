@@ -44,47 +44,55 @@
           "title": "Lägg till medicin",
           "description": "Konfigurera en medicin. Varje sektion nedan täcker en del av konfigurationen — utöka eller fäll ihop dem efter behov.",
           "data": {
-            "name": "Medicinnamn (sök eller skriv)",
-            "med_type": "Medicintyp",
-            "unit_count": "Antal per dos (tabletter / droppar / injektioner)",
-            "unit_strength_mg": "Styrka per enhet",
-            "notes": "Anteckningar",
-            "person_id": "Person (valfritt — lämna tomt för hushåll)",
-            "varunummer": "Varunummer (valfritt)",
-            "npl_id": "NPL-id (valfritt)",
-            "atc_code": "ATC-kod (valfritt — fylls i automatiskt om du valde från listan)",
-            "frequency": "Frekvens",
-            "times": "Tidpunkter, kommaseparerade (HH:MM)",
-            "days": "Veckodagar (endast Veckovis)",
-            "days_of_month": "Månadens dagar, kommaseparerade 1–31 (endast Månadsvis)",
-            "interval_days": "Intervall i dagar (endast Var-N:e-dag, 2–365)",
-            "starts_on": "Startdatum (endast Var-N:e-dag, valfritt, ÅÅÅÅ-MM-DD)",
-            "ends_on": "Slutdatum (valfritt, ÅÅÅÅ-MM-DD)",
-            "times_mon": "Mån — tider (lämna tomt för att använda 'Tidpunkter')",
-            "times_tue": "Tis — tider (lämna tomt för att använda 'Tidpunkter')",
-            "times_wed": "Ons — tider (lämna tomt för att använda 'Tidpunkter')",
-            "times_thu": "Tor — tider (lämna tomt för att använda 'Tidpunkter')",
-            "times_fri": "Fre — tider (lämna tomt för att använda 'Tidpunkter')",
-            "times_sat": "Lör — tider (lämna tomt för att använda 'Tidpunkter')",
-            "times_sun": "Sön — tider (lämna tomt för att använda 'Tidpunkter')",
             "remind_window_minutes": "Markera som missad efter (minuter)"
           },
           "sections": {
             "identity_section": {
               "name": "Identitet",
-              "description": "Medicinens identitet och dos. Att välja en känd medicin från rullgardinen fyller automatiskt i ATC-kod och aktiv substans."
+              "description": "Medicinens identitet och dos. Att välja en känd medicin från rullgardinen fyller automatiskt i ATC-kod och aktiv substans.",
+              "data": {
+                "name": "Medicinnamn (sök eller skriv)",
+                "med_type": "Medicintyp",
+                "unit_count": "Antal per dos (tabletter / droppar / injektioner)",
+                "unit_strength_mg": "Styrka per enhet",
+                "notes": "Anteckningar",
+                "person_id": "Person (valfritt — lämna tomt för hushåll)"
+              }
             },
             "identifiers_section": {
               "name": "Läkemedelsregister-id (valfritt)",
-              "description": "Varunummer, NPL-id och ATC-kod. Fylls i automatiskt om du väljer en medicin från rullgardinen ovan; lämna tomt för fritext-mediciner."
+              "description": "Varunummer, NPL-id och ATC-kod. Fylls i automatiskt om du väljer en medicin från rullgardinen ovan; lämna tomt för fritext-mediciner.",
+              "data": {
+                "varunummer": "Varunummer (valfritt)",
+                "npl_id": "NPL-id (valfritt)",
+                "atc_code": "ATC-kod (valfritt — fylls i automatiskt om du valde från listan)"
+              }
             },
             "schedule_section": {
               "name": "Schema",
-              "description": "När medicinen ska tas. Daglig: varje dag. Veckovis: använder veckodagslistan. Månadsvis: använder månadens dagar (t.ex. '1, 15' för 2 ggr/månad). Var-N:e-dag: använder intervallfältet nedan."
+              "description": "När medicinen ska tas. Daglig: varje dag. Veckovis: använder veckodagslistan. Månadsvis: använder månadens dagar (t.ex. '1, 15' för 2 ggr/månad). Var-N:e-dag: använder intervallfältet nedan.",
+              "data": {
+                "frequency": "Frekvens",
+                "times": "Tidpunkter, kommaseparerade (HH:MM)",
+                "days": "Veckodagar (endast Veckovis)",
+                "days_of_month": "Månadens dagar, kommaseparerade 1–31 (endast Månadsvis)",
+                "interval_days": "Intervall i dagar (endast Var-N:e-dag, 2–365)",
+                "starts_on": "Startdatum (endast Var-N:e-dag, valfritt, ÅÅÅÅ-MM-DD)",
+                "ends_on": "Slutdatum (valfritt, ÅÅÅÅ-MM-DD)"
+              }
             },
             "per_weekday_section": {
               "name": "Tider per veckodag (avancerat)",
-              "description": "Valfritt. Lämna alla tomma för samma tider varje aktiv dag. Fyll i några för att använda olika tider olika dagar (t.ex. mån-fre 08:00, lör-sön 10:00). I detta läge betyder en tom rad att den dagen hoppas över."
+              "description": "Valfritt. Lämna alla tomma för samma tider varje aktiv dag. Fyll i några för att använda olika tider olika dagar (t.ex. mån-fre 08:00, lör-sön 10:00). I detta läge betyder en tom rad att den dagen hoppas över.",
+              "data": {
+                "times_mon": "Mån — tider (lämna tomt för att använda 'Tidpunkter')",
+                "times_tue": "Tis — tider (lämna tomt för att använda 'Tidpunkter')",
+                "times_wed": "Ons — tider (lämna tomt för att använda 'Tidpunkter')",
+                "times_thu": "Tor — tider (lämna tomt för att använda 'Tidpunkter')",
+                "times_fri": "Fre — tider (lämna tomt för att använda 'Tidpunkter')",
+                "times_sat": "Lör — tider (lämna tomt för att använda 'Tidpunkter')",
+                "times_sun": "Sön — tider (lämna tomt för att använda 'Tidpunkter')"
+              }
             }
           }
         },
@@ -92,47 +100,55 @@
           "title": "Ändra medicin",
           "description": "Uppdatera medicinens schema, dos eller ägare. Varje sektion nedan kan utökas eller fällas ihop. Att välja ett annat namn från rullgardinen skriver inte över ATC-kod eller anteckningar om du redan fyllt i dem.",
           "data": {
-            "name": "Medicinnamn (sök eller skriv)",
-            "med_type": "Medicintyp",
-            "unit_count": "Antal per dos (tabletter / droppar / injektioner)",
-            "unit_strength_mg": "Styrka per enhet",
-            "notes": "Anteckningar",
-            "person_id": "Person (valfritt — lämna tomt för hushåll)",
-            "varunummer": "Varunummer (valfritt)",
-            "npl_id": "NPL-id (valfritt)",
-            "atc_code": "ATC-kod (valfritt)",
-            "frequency": "Frekvens",
-            "times": "Tidpunkter, kommaseparerade (HH:MM)",
-            "days": "Veckodagar (endast Veckovis)",
-            "days_of_month": "Månadens dagar, kommaseparerade 1–31 (endast Månadsvis)",
-            "interval_days": "Intervall i dagar (endast Var-N:e-dag, 2–365)",
-            "starts_on": "Startdatum (endast Var-N:e-dag, valfritt, ÅÅÅÅ-MM-DD)",
-            "ends_on": "Slutdatum (valfritt, ÅÅÅÅ-MM-DD)",
-            "times_mon": "Mån — tider (lämna tomt för att använda 'Tidpunkter')",
-            "times_tue": "Tis — tider (lämna tomt för att använda 'Tidpunkter')",
-            "times_wed": "Ons — tider (lämna tomt för att använda 'Tidpunkter')",
-            "times_thu": "Tor — tider (lämna tomt för att använda 'Tidpunkter')",
-            "times_fri": "Fre — tider (lämna tomt för att använda 'Tidpunkter')",
-            "times_sat": "Lör — tider (lämna tomt för att använda 'Tidpunkter')",
-            "times_sun": "Sön — tider (lämna tomt för att använda 'Tidpunkter')",
             "remind_window_minutes": "Markera som missad efter (minuter)"
           },
           "sections": {
             "identity_section": {
               "name": "Identitet",
-              "description": "Medicinens identitet och dos."
+              "description": "Medicinens identitet och dos.",
+              "data": {
+                "name": "Medicinnamn (sök eller skriv)",
+                "med_type": "Medicintyp",
+                "unit_count": "Antal per dos (tabletter / droppar / injektioner)",
+                "unit_strength_mg": "Styrka per enhet",
+                "notes": "Anteckningar",
+                "person_id": "Person (valfritt — lämna tomt för hushåll)"
+              }
             },
             "identifiers_section": {
               "name": "Läkemedelsregister-id (valfritt)",
-              "description": "Varunummer, NPL-id och ATC-kod."
+              "description": "Varunummer, NPL-id och ATC-kod.",
+              "data": {
+                "varunummer": "Varunummer (valfritt)",
+                "npl_id": "NPL-id (valfritt)",
+                "atc_code": "ATC-kod (valfritt)"
+              }
             },
             "schedule_section": {
               "name": "Schema",
-              "description": "När medicinen ska tas. Daglig / Veckovis / Månadsvis / Var-N:e-dag. Endast fältet för det valda schemat används."
+              "description": "När medicinen ska tas. Daglig / Veckovis / Månadsvis / Var-N:e-dag. Endast fältet för det valda schemat används.",
+              "data": {
+                "frequency": "Frekvens",
+                "times": "Tidpunkter, kommaseparerade (HH:MM)",
+                "days": "Veckodagar (endast Veckovis)",
+                "days_of_month": "Månadens dagar, kommaseparerade 1–31 (endast Månadsvis)",
+                "interval_days": "Intervall i dagar (endast Var-N:e-dag, 2–365)",
+                "starts_on": "Startdatum (endast Var-N:e-dag, valfritt, ÅÅÅÅ-MM-DD)",
+                "ends_on": "Slutdatum (valfritt, ÅÅÅÅ-MM-DD)"
+              }
             },
             "per_weekday_section": {
               "name": "Tider per veckodag (avancerat)",
-              "description": "Valfritt. Lämna alla tomma för samma tider varje aktiv dag. Fyll i några för att använda olika tider olika dagar. I detta läge betyder en tom rad att den dagen hoppas över."
+              "description": "Valfritt. Lämna alla tomma för samma tider varje aktiv dag. Fyll i några för att använda olika tider olika dagar. I detta läge betyder en tom rad att den dagen hoppas över.",
+              "data": {
+                "times_mon": "Mån — tider (lämna tomt för att använda 'Tidpunkter')",
+                "times_tue": "Tis — tider (lämna tomt för att använda 'Tidpunkter')",
+                "times_wed": "Ons — tider (lämna tomt för att använda 'Tidpunkter')",
+                "times_thu": "Tor — tider (lämna tomt för att använda 'Tidpunkter')",
+                "times_fri": "Fre — tider (lämna tomt för att använda 'Tidpunkter')",
+                "times_sat": "Lör — tider (lämna tomt för att använda 'Tidpunkter')",
+                "times_sun": "Sön — tider (lämna tomt för att använda 'Tidpunkter')"
+              }
             }
           }
         }
