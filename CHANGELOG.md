@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0-beta3.1] — 2026-05-09
+
+Hotfix for beta3.
+
+- Fix: `NameError` on coordinator startup when any prescription used interval mode. `SCHEDULE_TYPE_INTERVAL` was referenced in the prescription-state builder but never imported. Added the missing import; existing prescriptions continue to work without changes.
+- Tests: added a static name-resolution check across the core modules (coordinator, config_flow, schedule, sensor) so this class of "function-body references a constant that isn't imported at module top" bug fails CI before shipping rather than at user runtime.
+
 ## [0.2.0-beta3] — 2026-05-09
 
 Adds three schedule shapes the old engine couldn't express. UI lives in the prescription Add/Edit modal.
