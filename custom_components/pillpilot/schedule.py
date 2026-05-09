@@ -363,26 +363,25 @@ class Schedule:
     ) -> datetime | None:
         """First scheduled occurrence strictly after ``now``.
 
-        Walks the RRULE date-by-date and combines with each entry in
-        ``times``. Stops at ``lookahead_days`` to bound work even on
-        misconfigured rules. For typical schedules the answer is
-        within a few iterations.
+        Walks dates by integer offset from ``now.date()`` and asks
+        ``matches_date`` for each candidate. This keeps timezone
+        handling clean: ``now`` is the only datetime we touch (always
+        aware in HA), ``matches_date`` does its rrule check on a
+        plain ``date`` (no tz at all), and ``occurrences_on`` grafts
+        ``now.tzinfo`` onto the constructed datetimes so the
+        comparison ``occurrence > now`` is always aware-vs-aware.
+        Stops at ``lookahead_days`` to bound work even on
+        misconfigured rules.
         """
         if not self.times:
             return None
-        rule = self._build_rrule()
-        # Walk dates the rule produces, starting at "now"'s date.
-        cursor = datetime.combine(now.date(), time.min)
-        deadline = now + timedelta(days=lookahead_days)
-        nxt_date_dt = rule.after(cursor, inc=True)
-        while nxt_date_dt is not None and nxt_date_dt <= deadline:
-            d = nxt_date_dt.date()
-            if self.schedule_type != SCHEDULE_TYPE_CYCLE or self._is_cycle_on_day(d):
-                for occurrence in self.occurrences_on(d, tz=now.tzinfo):
-                    if occurrence > now:
-                        return occurrence
-            # Advance to next date the rule fires (strictly after this one).
-            nxt_date_dt = rule.after(nxt_date_dt, inc=False)
+        for offset in range(lookahead_days):
+            d = (now + timedelta(days=offset)).date()
+            if not self.matches_date(d):
+                continue
+            for occurrence in self.occurrences_on(d, tz=now.tzinfo):
+                if occurrence > now:
+                    return occurrence
         return None
 
     def closest_to(self, when: datetime) -> datetime | None:

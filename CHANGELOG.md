@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0-beta2] — 2026-05-09
+
+Fixes a crash in v0.2.0-beta1 that hid the side panel after upgrading from v0.1.5. v0.2.0-beta1 is retracted.
+
+- Fix: `Schedule.next_after` mixed naive and aware datetimes when called with HA's `dt_util.now()` (always aware). Coordinator update raised `TypeError` on first tick. Now walks dates by offset like the v0.1.x scheduler did and grafts `now.tzinfo` onto results.
+- Regression test added covering tz-aware input in daily and weekly modes.
+
 ## [0.2.0-beta1] — 2026-05-09
 
 First beta of the scheduler rewrite. Engine swapped to an RRULE-backed implementation. Existing prescriptions are migrated on first start. UI unchanged in this beta.
