@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0-beta3.5] — 2026-05-09
+
+UX: panel prescription form replaces the "Different times per day of week" checkbox with a mode picker.
+
+- Times mode is now a radio pair — **Same times every day** vs **Different times per weekday** — that determines which times input appears below. The single "Times of day" field and the seven per-weekday rows are mutually exclusive in the UI; only one is shown at a time. The previous checkbox toggle that left "Times of day" visible above the per-weekday rows is gone.
+- Switching between modes is lossless within an edit session: both `draft.times` and `draft.timesPerWeekday` stay alive in the draft regardless of which mode is active. Switching to per-weekday only seeds the seven rows from "Times of day" if they are currently empty (first-time helper); subsequent switches preserve whatever the user has typed. Switching back to "Same times every day" no longer wipes the per-weekday entries. On save, only the active mode's data persists — same on-disk shape as before.
+- Validator, WebSocket contract, and on-disk format are unchanged. Pure rendering and event-handler change in `panel.js` (~30 LOC delta).
+
 ## [0.2.0-beta3.4] — 2026-05-09
 
 UX: HA Settings form is now organized into collapsible sections instead of one flat ~22-field stack.

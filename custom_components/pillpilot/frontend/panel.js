@@ -838,21 +838,25 @@ const STYLES = `
   }
   .day-checkbox input { margin: 0; cursor: pointer; }
 
-  /* v0.2.0-beta3 per-weekday times rows */
-  .per-weekday-toggle {
-    flex-direction: row;
+  /* v0.2.0-beta3.5 times-mode picker (radios). Replaces the
+     beta3 .per-weekday-toggle checkbox UI — same data model
+     (draft.usePerWeekday boolean), better UX (one source of
+     truth for the times input shape). */
+  .times-mode-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .times-mode-picker .radio-option {
+    display: flex;
     align-items: center;
     gap: 8px;
+    cursor: pointer;
+    font-size: 14px;
   }
-  .per-weekday-toggle .form-label {
-    flex: 1;
-  }
-  .per-weekday-toggle input[type="checkbox"] {
+  .times-mode-picker .radio-option input[type="radio"] {
     margin: 0;
     cursor: pointer;
-  }
-  .per-weekday-toggle .form-hint {
-    flex-basis: 100%;
   }
   .per-weekday-rows {
     display: flex;
@@ -2877,12 +2881,34 @@ class PillPilotPanel extends HTMLElement {
                 <span class="form-label">Frequency *</span>
                 <select class="form-input" data-sub-field="frequency">${freqOptions}</select>
               </label>
+              <div class="form-field times-mode-picker">
+                <span class="form-label">Times mode</span>
+                <label class="radio-option">
+                  <input type="radio" name="times-mode" data-sub-field="usePerWeekday" data-mode="same" ${!draft.usePerWeekday ? "checked" : ""}>
+                  <span>Same times every day</span>
+                </label>
+                <label class="radio-option">
+                  <input type="radio" name="times-mode" data-sub-field="usePerWeekday" data-mode="perWeekday" ${draft.usePerWeekday ? "checked" : ""}>
+                  <span>Different times per weekday</span>
+                </label>
+              </div>
+              ${!draft.usePerWeekday ? `
               <label class="form-field">
                 <span class="form-label">Times of day *</span>
                 <input type="text" class="form-input" data-sub-field="times" value="${escapeHtml(draft.times)}" placeholder="07:00, 20:00">
                 <span class="form-hint">Comma-separated 24-hour times (HH:MM).</span>
                 ${fieldError("times")}
-              </label>
+              </label>` : `
+              <div class="form-field per-weekday-rows">
+                ${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label, idx) => `
+                  <div class="weekday-row">
+                    <span class="weekday-label">${label}</span>
+                    <input type="text" class="form-input weekday-input" data-sub-field="timesPerWeekday" data-day-index="${idx}" value="${escapeHtml((draft.timesPerWeekday && draft.timesPerWeekday[idx]) || "")}" placeholder="08:00, 20:00 — blank = skip">
+                  </div>
+                `).join("")}
+                <span class="form-hint">Leave a row blank to skip doses on that weekday.</span>
+                ${fieldError("times_per_weekday")}
+              </div>`}
               ${showWeekly ? `
               <div class="form-field">
                 <span class="form-label">Days of week</span>
@@ -2909,21 +2935,6 @@ class PillPilotPanel extends HTMLElement {
                 <span class="form-hint">Optional — leave empty for no end date. Useful for antibiotic courses or other time-limited prescriptions.</span>
                 ${fieldError("ends_on")}
               </label>
-              <label class="form-field per-weekday-toggle">
-                <span class="form-label">Different times per day of week</span>
-                <input type="checkbox" data-sub-field="usePerWeekday" ${draft.usePerWeekday ? "checked" : ""}>
-                <span class="form-hint">Optional — when enabled, the seven rows below replace the "Times of day" field above. Leave a row blank to skip doses on that weekday. Toggling on copies "Times of day" into all seven rows; toggling off discards the per-weekday entries.</span>
-              </label>
-              ${draft.usePerWeekday ? `
-              <div class="form-field per-weekday-rows">
-                ${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label, idx) => `
-                  <div class="weekday-row">
-                    <span class="weekday-label">${label}</span>
-                    <input type="text" class="form-input weekday-input" data-sub-field="timesPerWeekday" data-day-index="${idx}" value="${escapeHtml((draft.timesPerWeekday && draft.timesPerWeekday[idx]) || "")}" placeholder="08:00, 20:00 — blank = skip">
-                  </div>
-                `).join("")}
-                ${fieldError("times_per_weekday")}
-              </div>` : ""}
               <label class="form-field">
                 <span class="form-label">Reminder window</span>
                 <div class="slider-with-input">
@@ -3178,17 +3189,24 @@ class PillPilotPanel extends HTMLElement {
             draft.daysOfWeek.delete(idx);
           }
         } else if (field === "usePerWeekday") {
-          // Per-weekday toggle. ON copies the flat "Times of day"
-          // value into all 7 rows so the user has a sensible
-          // starting point. OFF discards per-weekday data and
-          // returns to simple mode.
-          const checked = e.currentTarget.checked;
-          draft.usePerWeekday = checked;
-          if (checked) {
-            const flat = (draft.times || "").trim();
-            draft.timesPerWeekday = [flat, flat, flat, flat, flat, flat, flat];
-          } else {
-            draft.timesPerWeekday = ["", "", "", "", "", "", ""];
+          // Times-mode picker (radios). Switching modes is lossless:
+          // both draft.times (single field) and draft.timesPerWeekday
+          // (7-row array) stay alive in the draft regardless of which
+          // mode is active. On save, prescriptionToWire decides which
+          // one persists based on draft.usePerWeekday. Only seed the
+          // 7 rows from draft.times on first switch to per-weekday
+          // (when timesPerWeekday is empty) so the user has a sensible
+          // starting point — subsequent switches preserve what's there.
+          const mode = e.currentTarget.dataset.mode;
+          draft.usePerWeekday = mode === "perWeekday";
+          if (draft.usePerWeekday) {
+            const empty =
+              !Array.isArray(draft.timesPerWeekday) ||
+              draft.timesPerWeekday.every((row) => !row || !String(row).trim());
+            if (empty) {
+              const flat = (draft.times || "").trim();
+              draft.timesPerWeekday = [flat, flat, flat, flat, flat, flat, flat];
+            }
           }
           this._render();
         } else if (field === "timesPerWeekday") {
