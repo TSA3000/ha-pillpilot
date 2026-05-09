@@ -36,6 +36,7 @@ from homeassistant.config_entries import (
     SubentryFlowResult,
 )
 from homeassistant.core import callback
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers.selector import (
     EntitySelector,
     EntitySelectorConfig,
@@ -879,6 +880,26 @@ WEEKDAY_FORM_KEYS = (
 )
 WEEKDAY_LABELS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
+# Section keys for the collapsible-section form layout (v0.2.0-beta3.4).
+# These are the top-level keys in the user_input dict when the form
+# uses HA's `section()` schema construct: every field declared inside
+# the section's inner Schema arrives nested under one of these keys.
+# `_flatten_section_input` unpacks them back to flat shape before
+# the validator runs, so the validator API and storage format stay
+# section-unaware. A future migration to a multi-step config flow
+# would keep the same flat shape — only this flow handler needs to
+# know about sections.
+SECTION_IDENTITY = "identity_section"
+SECTION_IDENTIFIERS = "identifiers_section"
+SECTION_SCHEDULE = "schedule_section"
+SECTION_PER_WEEKDAY = "per_weekday_section"
+SECTION_KEYS = (
+    SECTION_IDENTITY,
+    SECTION_IDENTIFIERS,
+    SECTION_SCHEDULE,
+    SECTION_PER_WEEKDAY,
+)
+
 MED_TYPE_OPTIONS = [
     {"value": MED_TYPE_PILL, "label": "Pill / tablet"},
     {"value": MED_TYPE_DROPS, "label": "Drops"},
@@ -1171,12 +1192,21 @@ class MedicineSubentryFlow(ConfigSubentryFlow):
 
         v0.2.21: validation moved to module-level ``validate_medicine_input``
         so the in-panel edit modal can reuse it.
+
+        v0.2.0-beta3.4: form fields are grouped into collapsible
+        sections via HA's ``section()`` schema construct. User input
+        arrives nested under section keys; we flatten before passing
+        to the validator so the validator API and the on-disk storage
+        format both stay section-unaware. A future migration to a
+        multi-step config flow keeps the same flat-shape contract —
+        only this handler knows about sections.
         """
         existing = existing or {}
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            med, errors = validate_medicine_input(self.hass, user_input)
+            flat_input = self._flatten_section_input(user_input)
+            med, errors = validate_medicine_input(self.hass, flat_input)
             if med is not None:
                 return await finalize(med)
 
@@ -1186,6 +1216,30 @@ class MedicineSubentryFlow(ConfigSubentryFlow):
             errors=errors,
             data_schema=self._schema(defaults),
         )
+
+    @staticmethod
+    def _flatten_section_input(user_input: dict[str, Any]) -> dict[str, Any]:
+        """Unwrap section nesting into a flat field-name → value map.
+
+        HA's ``section()`` schema construct returns user input nested
+        one level deep under each section key
+        (``user_input["identity_section"]["name"]``); the validator
+        and every other consumer of this dict expects flat keys
+        (``user_input["name"]``). Top-level non-dict values pass
+        through unchanged so the bare ``remind_window_minutes`` field
+        (declared outside any section) still arrives correctly.
+
+        No field in the schema has a dict value, so the
+        "is value a dict" test is sufficient to distinguish a section
+        wrapper from a real value.
+        """
+        flat: dict[str, Any] = {}
+        for key, value in user_input.items():
+            if isinstance(value, dict):
+                flat.update(value)
+            else:
+                flat[key] = value
+        return flat
 
     @staticmethod
     def _defaults_from(existing: dict[str, Any]) -> dict[str, Any]:
@@ -1316,121 +1370,162 @@ class MedicineSubentryFlow(ConfigSubentryFlow):
         )
         return vol.Schema(
             {
-                vol.Required(
-                    CONF_MED_NAME, default=defaults[CONF_MED_NAME]
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=name_options,
-                        custom_value=True,
-                        mode=SelectSelectorMode.DROPDOWN,
-                        sort=True,
-                    )
+                vol.Required(SECTION_IDENTITY): section(
+                    vol.Schema(
+                        {
+                            vol.Required(
+                                CONF_MED_NAME, default=defaults[CONF_MED_NAME]
+                            ): SelectSelector(
+                                SelectSelectorConfig(
+                                    options=name_options,
+                                    custom_value=True,
+                                    mode=SelectSelectorMode.DROPDOWN,
+                                    sort=True,
+                                )
+                            ),
+                            vol.Required(
+                                CONF_MED_TYPE, default=defaults[CONF_MED_TYPE]
+                            ): SelectSelector(
+                                SelectSelectorConfig(
+                                    options=MED_TYPE_OPTIONS,
+                                    mode=SelectSelectorMode.LIST,
+                                )
+                            ),
+                            vol.Required(
+                                CONF_MED_UNIT_COUNT,
+                                default=defaults[CONF_MED_UNIT_COUNT],
+                            ): NumberSelector(
+                                NumberSelectorConfig(
+                                    min=0.1, max=100, step=0.1,
+                                    mode=NumberSelectorMode.BOX,
+                                )
+                            ),
+                            vol.Required(
+                                CONF_MED_UNIT_STRENGTH_MG,
+                                default=defaults[CONF_MED_UNIT_STRENGTH_MG],
+                            ): NumberSelector(
+                                NumberSelectorConfig(
+                                    min=0.001,
+                                    max=100000,
+                                    step=0.001,
+                                    mode=NumberSelectorMode.BOX,
+                                    unit_of_measurement="mg",
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_MED_NOTES, default=defaults[CONF_MED_NOTES]
+                            ): str,
+                            person_key: EntitySelector(
+                                EntitySelectorConfig(domain="person")
+                            ),
+                        }
+                    ),
+                    {"collapsed": False},
                 ),
-                vol.Required(
-                    CONF_MED_TYPE, default=defaults[CONF_MED_TYPE]
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=MED_TYPE_OPTIONS,
-                        mode=SelectSelectorMode.LIST,
-                    )
+                vol.Required(SECTION_IDENTIFIERS): section(
+                    vol.Schema(
+                        {
+                            vol.Optional(
+                                CONF_MED_VARUNUMMER,
+                                default=defaults[CONF_MED_VARUNUMMER],
+                            ): str,
+                            vol.Optional(
+                                CONF_MED_NPL_ID,
+                                default=defaults[CONF_MED_NPL_ID],
+                            ): str,
+                            vol.Optional(
+                                CONF_MED_ATC_CODE,
+                                default=defaults[CONF_MED_ATC_CODE],
+                            ): str,
+                        }
+                    ),
+                    {"collapsed": True},
                 ),
-                vol.Required(
-                    CONF_MED_UNIT_COUNT,
-                    default=defaults[CONF_MED_UNIT_COUNT],
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=0.1, max=100, step=0.1, mode=NumberSelectorMode.BOX
-                    )
+                vol.Required(SECTION_SCHEDULE): section(
+                    vol.Schema(
+                        {
+                            vol.Required(
+                                CONF_MED_FREQUENCY,
+                                default=defaults[CONF_MED_FREQUENCY],
+                            ): SelectSelector(
+                                SelectSelectorConfig(
+                                    options=FREQUENCY_OPTIONS,
+                                    mode=SelectSelectorMode.LIST,
+                                )
+                            ),
+                            vol.Required(
+                                CONF_MED_TIMES, default=defaults[CONF_MED_TIMES]
+                            ): str,
+                            vol.Optional(
+                                CONF_MED_DAYS, default=defaults[CONF_MED_DAYS]
+                            ): SelectSelector(
+                                SelectSelectorConfig(
+                                    options=WEEKDAYS,
+                                    multiple=True,
+                                    mode=SelectSelectorMode.LIST,
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_MED_DAYS_OF_MONTH,
+                                default=defaults[CONF_MED_DAYS_OF_MONTH],
+                            ): str,
+                            vol.Optional(
+                                CONF_MED_INTERVAL_DAYS,
+                                default=defaults[CONF_MED_INTERVAL_DAYS],
+                            ): NumberSelector(
+                                NumberSelectorConfig(
+                                    min=2, max=365, step=1,
+                                    mode=NumberSelectorMode.BOX,
+                                )
+                            ),
+                            # ends_on is a free-text str rather than a
+                            # DateSelector — DateSelector rejects empty
+                            # string, but the universal-but-optional
+                            # design needs an explicit "no end date"
+                            # representation, and "" is the cleanest
+                            # one. Validator parses ISO YYYY-MM-DD and
+                            # surfaces ends_on_invalid on bad input.
+                            vol.Optional(
+                                CONF_MED_ENDS_ON,
+                                default=defaults[CONF_MED_ENDS_ON],
+                            ): str,
+                        }
+                    ),
+                    {"collapsed": False},
                 ),
-                vol.Required(
-                    CONF_MED_UNIT_STRENGTH_MG,
-                    default=defaults[CONF_MED_UNIT_STRENGTH_MG],
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=0.001,
-                        max=100000,
-                        step=0.001,
-                        mode=NumberSelectorMode.BOX,
-                        unit_of_measurement="mg",
-                    )
+                # Per-weekday times: 7 separate fields. Leave all blank
+                # to use the simple "Times of day" field above for every
+                # firing weekday. Filling any switches the prescription
+                # to per-weekday mode; blanks then mean skip-day.
+                # Collapsed by default — power-user feature.
+                vol.Required(SECTION_PER_WEEKDAY): section(
+                    vol.Schema(
+                        {
+                            vol.Optional(
+                                "times_mon", default=defaults.get("times_mon", "")
+                            ): str,
+                            vol.Optional(
+                                "times_tue", default=defaults.get("times_tue", "")
+                            ): str,
+                            vol.Optional(
+                                "times_wed", default=defaults.get("times_wed", "")
+                            ): str,
+                            vol.Optional(
+                                "times_thu", default=defaults.get("times_thu", "")
+                            ): str,
+                            vol.Optional(
+                                "times_fri", default=defaults.get("times_fri", "")
+                            ): str,
+                            vol.Optional(
+                                "times_sat", default=defaults.get("times_sat", "")
+                            ): str,
+                            vol.Optional(
+                                "times_sun", default=defaults.get("times_sun", "")
+                            ): str,
+                        }
+                    ),
+                    {"collapsed": True},
                 ),
-                vol.Optional(CONF_MED_NOTES, default=defaults[CONF_MED_NOTES]): str,
-                person_key: EntitySelector(EntitySelectorConfig(domain="person")),
-                vol.Optional(
-                    CONF_MED_VARUNUMMER, default=defaults[CONF_MED_VARUNUMMER]
-                ): str,
-                vol.Optional(CONF_MED_NPL_ID, default=defaults[CONF_MED_NPL_ID]): str,
-                vol.Optional(
-                    CONF_MED_ATC_CODE, default=defaults[CONF_MED_ATC_CODE]
-                ): str,
-                vol.Required(
-                    CONF_MED_FREQUENCY, default=defaults[CONF_MED_FREQUENCY]
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=FREQUENCY_OPTIONS,
-                        mode=SelectSelectorMode.LIST,
-                    )
-                ),
-                vol.Required(CONF_MED_TIMES, default=defaults[CONF_MED_TIMES]): str,
-                vol.Optional(
-                    CONF_MED_DAYS, default=defaults[CONF_MED_DAYS]
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=WEEKDAYS,
-                        multiple=True,
-                        mode=SelectSelectorMode.LIST,
-                    )
-                ),
-                vol.Optional(
-                    CONF_MED_DAYS_OF_MONTH,
-                    default=defaults[CONF_MED_DAYS_OF_MONTH],
-                ): str,
-                vol.Optional(
-                    CONF_MED_INTERVAL_DAYS,
-                    default=defaults[CONF_MED_INTERVAL_DAYS],
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=2, max=365, step=1, mode=NumberSelectorMode.BOX
-                    )
-                ),
-                # ends_on is intentionally a free-text str field rather
-                # than a DateSelector — DateSelector rejects an empty
-                # string, but the universal-but-optional design needs
-                # an explicit "no end date" representation, and an
-                # empty string is the cleanest one. Validator parses
-                # ISO format ("YYYY-MM-DD") and surfaces ends_on_invalid
-                # on bad input.
-                vol.Optional(
-                    CONF_MED_ENDS_ON, default=defaults[CONF_MED_ENDS_ON]
-                ): str,
-                # Per-weekday times: 7 separate fields, one per weekday
-                # (Mon … Sun). Each is a comma-separated HH:MM string.
-                # Leave all 7 blank to use the simple "Times of day"
-                # field above for every weekday. Filling in any of
-                # these switches the prescription to per-weekday mode;
-                # blank fields in per-weekday mode mean no doses on
-                # that weekday (skip-day semantics).
-                vol.Optional(
-                    "times_mon", default=defaults.get("times_mon", "")
-                ): str,
-                vol.Optional(
-                    "times_tue", default=defaults.get("times_tue", "")
-                ): str,
-                vol.Optional(
-                    "times_wed", default=defaults.get("times_wed", "")
-                ): str,
-                vol.Optional(
-                    "times_thu", default=defaults.get("times_thu", "")
-                ): str,
-                vol.Optional(
-                    "times_fri", default=defaults.get("times_fri", "")
-                ): str,
-                vol.Optional(
-                    "times_sat", default=defaults.get("times_sat", "")
-                ): str,
-                vol.Optional(
-                    "times_sun", default=defaults.get("times_sun", "")
-                ): str,
                 vol.Required(
                     CONF_MED_REMIND_WINDOW,
                     default=defaults[CONF_MED_REMIND_WINDOW],

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.0-beta3.4] — 2026-05-09
+
+UX: HA Settings form is now organized into collapsible sections instead of one flat ~22-field stack.
+
+- Add medicine / Reconfigure medicine forms group fields into four sections — **Identity** (drug + dose), **Drug-database identifiers** (varunummer / NPL ID / ATC code, collapsed by default), **Schedule** (frequency + frequency-conditional fields), and **Per-weekday time overrides** (collapsed by default — Mon-Fri / Sat-Sun-style schedules). The reminder-window field stays at the top level. Sections use HA's native `section()` schema construct, so collapse/expand behavior comes from HA's form renderer.
+- `_flatten_section_input` in `MedicineSubentryFlow` unwraps the nested user input HA delivers into the flat shape `validate_medicine_input` expects. The validator and on-disk storage are section-unaware; only the flow handler knows about form layout. A future migration to a multi-step config flow uses the same boundary.
+- Tests: new `test_v020_beta3_4_sections.py` covers flatten semantics, section-name constants, and an end-to-end round-trip from sectioned form input through the validator. The 6 existing tests that stub Home Assistant got a one-line `homeassistant.data_entry_flow` shim so they continue to load `config_flow.py` after the new import.
+
+## [0.2.0-beta3.3] — 2026-05-09
+
+Hotfix for beta3.2.
+
+- Fix: medicine-name autocomplete in the panel's Add/Edit modal failed to appear when the user opened the modal before the catalog websocket fetch resolved (the common case on first panel load). The fetch resolves async; the modal was already rendered with an empty `<datalist>` and the panel's re-render is suppressed while a modal is open, so the catalog never reached the dropdown until the user closed and reopened the modal. Now the cache-resolve handler refreshes the open modal's `<datalist>` options surgically without disturbing the rest of the form, so autocomplete fills in as soon as the catalog lands.
+
 ## [0.2.0-beta3.2] — 2026-05-09
 
 Hotfix for beta3.1.

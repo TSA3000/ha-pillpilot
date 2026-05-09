@@ -42,7 +42,7 @@
       "step": {
         "user": {
           "title": "Lägg till medicin",
-          "description": "Välj medicin från rullgardinen (innehåller vanliga svenska mediciner med alternativa stavningar — skriv t.ex. 'alvadon' för att hitta Alvedon) eller skriv ett namn som inte finns i listan. Välj sedan typ (tablett / droppar / injektion), antal per dos och styrka per enhet i mg. Total dos beräknas som antal × styrka. Frekvens: Daglig ignorerar dagfälten; Veckovis använder 'Veckodagar'; Månadsvis använder 'Månadens dagar' (t.ex. '1, 15' för 2 ggr/månad). Identifierare (varunummer / NPL-id / ATC-kod) är alla valfria — om du väljer från listan fylls ATC-kod och aktiv substans i automatiskt.",
+          "description": "Konfigurera en medicin. Varje sektion nedan täcker en del av konfigurationen — utöka eller fäll ihop dem efter behov.",
           "data": {
             "name": "Medicinnamn (sök eller skriv)",
             "med_type": "Medicintyp",
@@ -67,11 +67,29 @@
             "times_sat": "Lör — tider (lämna tomt för att använda 'Tidpunkter')",
             "times_sun": "Sön — tider (lämna tomt för att använda 'Tidpunkter')",
             "remind_window_minutes": "Markera som missad efter (minuter)"
+          },
+          "sections": {
+            "identity_section": {
+              "name": "Identitet",
+              "description": "Medicinens identitet och dos. Att välja en känd medicin från rullgardinen fyller automatiskt i ATC-kod och aktiv substans."
+            },
+            "identifiers_section": {
+              "name": "Läkemedelsregister-id (valfritt)",
+              "description": "Varunummer, NPL-id och ATC-kod. Fylls i automatiskt om du väljer en medicin från rullgardinen ovan; lämna tomt för fritext-mediciner."
+            },
+            "schedule_section": {
+              "name": "Schema",
+              "description": "När medicinen ska tas. Daglig: varje dag. Veckovis: använder veckodagslistan. Månadsvis: använder månadens dagar (t.ex. '1, 15' för 2 ggr/månad). Var-N:e-dag: använder intervallfältet nedan."
+            },
+            "per_weekday_section": {
+              "name": "Tider per veckodag (avancerat)",
+              "description": "Valfritt. Lämna alla tomma för samma tider varje aktiv dag. Fyll i några för att använda olika tider olika dagar (t.ex. mån-fre 08:00, lör-sön 10:00). I detta läge betyder en tom rad att den dagen hoppas över."
+            }
           }
         },
         "reconfigure": {
           "title": "Ändra medicin",
-          "description": "Uppdatera medicinens schema, dos eller ägare. Att välja ett annat namn från rullgardinen skriver inte över ATC/anteckningar om du redan fyllt i dem.",
+          "description": "Uppdatera medicinens schema, dos eller ägare. Varje sektion nedan kan utökas eller fällas ihop. Att välja ett annat namn från rullgardinen skriver inte över ATC-kod eller anteckningar om du redan fyllt i dem.",
           "data": {
             "name": "Medicinnamn (sök eller skriv)",
             "med_type": "Medicintyp",
@@ -96,6 +114,24 @@
             "times_sat": "Lör — tider (lämna tomt för att använda 'Tidpunkter')",
             "times_sun": "Sön — tider (lämna tomt för att använda 'Tidpunkter')",
             "remind_window_minutes": "Markera som missad efter (minuter)"
+          },
+          "sections": {
+            "identity_section": {
+              "name": "Identitet",
+              "description": "Medicinens identitet och dos."
+            },
+            "identifiers_section": {
+              "name": "Läkemedelsregister-id (valfritt)",
+              "description": "Varunummer, NPL-id och ATC-kod."
+            },
+            "schedule_section": {
+              "name": "Schema",
+              "description": "När medicinen ska tas. Daglig / Veckovis / Månadsvis / Var-N:e-dag. Endast fältet för det valda schemat används."
+            },
+            "per_weekday_section": {
+              "name": "Tider per veckodag (avancerat)",
+              "description": "Valfritt. Lämna alla tomma för samma tider varje aktiv dag. Fyll i några för att använda olika tider olika dagar. I detta läge betyder en tom rad att den dagen hoppas över."
+            }
           }
         }
       },

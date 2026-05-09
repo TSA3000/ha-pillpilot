@@ -1372,16 +1372,41 @@ class PillPilotPanel extends HTMLElement {
         this._medicinesDb =
           (res && Array.isArray(res.medicines)) ? res.medicines : [];
         this._medicinesDbFetchInFlight = false;
-        // No re-render trigger needed: the next set hass tick (which
-        // comes seconds later at most via the coordinator) will pick
-        // up the new value when the modal opens. If a modal IS already
-        // open, the user can close+reopen to get autocomplete.
+        // If a modal is open when the cache lands, refresh the
+        // datalist contents in place. A full re-render would wipe
+        // the user's in-progress form state (innerHTML replace);
+        // surgical option-list update keeps everything else intact
+        // and the browser picks up the new options on next focus.
+        this._refreshOpenModalDatalist();
       })
       .catch((err) => {
         console.warn("[PillPilot] get_medicines_db failed:", err);
         this._medicinesDb = [];
         this._medicinesDbFetchInFlight = false;
       });
+  }
+
+  // Surgically replace the <option> children of the medicine-name
+  // datalist (if a modal containing it is open). Used to backfill
+  // autocomplete after the catalog WS call resolves later than the
+  // modal opening — the original race where users saw empty
+  // autocomplete on first panel load.
+  _refreshOpenModalDatalist() {
+    if (!this.shadowRoot) return;
+    const list = this.shadowRoot.getElementById("pp-edit-name-list");
+    if (!list) return;
+    const existingNames = this._getMedicines().map(
+      (m) => m.attributes.medicine_name || ""
+    );
+    const optionsHtml = this._buildNameOptions(existingNames)
+      .map((o) => {
+        if (o.label === o.value) {
+          return `<option value="${escapeHtml(o.value)}"></option>`;
+        }
+        return `<option value="${escapeHtml(o.value)}" label="${escapeHtml(o.label)}"></option>`;
+      })
+      .join("");
+    list.innerHTML = optionsHtml;
   }
 
   // Build the <option> rows for the drug-name datalist. Brand names

@@ -1,19 +1,22 @@
-# v0.2.0-beta3.2
+# v0.2.0-beta3.4
 
-> Hotfix for beta3.1. Cosmetic-only change to the HA Settings form labels — install over the top, no data migration, prescriptions keep their existing settings.
+> Form UX rework. Install over the top — no data migration, prescriptions keep their existing settings.
 
 ## What changed
 
-**Fixed: raw field keys showing in the HA Settings → Reconfigure medicine form.** The new beta3 fields (interval, end date, the seven per-weekday `times_*` rows) were rendering as `interval_days`, `ends_on`, `times_mon`, `times_tue` … because the labels weren't added to `strings.json` or the translation files. Now they show as:
+The Add medicine / Reconfigure medicine form is now organized into collapsible sections instead of one ~22-field stack:
 
-- "Interval in days (Every-N-days only, 2–365)"
-- "End date (optional, YYYY-MM-DD)"
-- "Mon — times (leave blank to use 'Times of day')" through "Sun — times …"
+- **Identity** (expanded) — name, type, per-dose count, strength, notes, person.
+- **Drug-database identifiers** (collapsed) — varunummer, NPL ID, ATC code. Auto-filled when you pick a medicine from the dropdown.
+- **Schedule** (expanded) — frequency, times, weekly days, monthly days, every-N-days interval, end date. Field labels include "(Weekly only)" / "(Monthly only)" / "(Every-N-days only)" markers so it's clear which apply.
+- **Per-weekday time overrides** (collapsed) — Mon-Sun rows for schedules like "Mon-Fri 08:00, Sat-Sun 10:00."
 
-Swedish localization ships with the same.
+Reminder window stays as a single field below the sections.
+
+Uses Home Assistant's native `section()` schema construct. Requires Home Assistant 2024.5 or newer.
 
 ## Upgrading
 
-Replace the `pillpilot` directory in `custom_components/` with the contents of this zip and restart Home Assistant. HACS users: update the integration normally — the 0.2.0-beta3.2 tag will appear under "Beta versions enabled."
+Replace the `pillpilot` directory in `custom_components/` with the contents of this zip and restart Home Assistant. HACS users: update normally.
 
-If you see the old raw labels after upgrading, hard-refresh the browser (Ctrl+Shift+R) — HA bundles translations into the frontend cache and a soft refresh sometimes keeps the old copy.
+If section names show as `identity_section` / `schedule_section` instead of "Identity" / "Schedule," hard-refresh the browser (Ctrl+Shift+R) to clear cached translations.

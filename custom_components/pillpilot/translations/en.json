@@ -42,7 +42,7 @@
       "step": {
         "user": {
           "title": "Add medicine",
-          "description": "Pick a medicine from the dropdown (it has common Swedish meds with alternate spellings — type 'alvadon' to find Alvedon, etc.) or type a name that's not in the list. Then pick the type (pill / drops / injection), how many you take per dose, and the strength of each unit in mg. Total dose is computed as count × strength. Pick a frequency: Daily ignores the day fields; Weekly uses 'Days of week'; Monthly uses 'Days of month' (e.g. '1, 15' for 2× per month). Identifiers (varunummer / NPL ID / ATC code) are all optional — picking from the dropdown auto-fills ATC and active substance for you.",
+          "description": "Set up a medicine. Each section below covers one part of the configuration — expand or collapse them as needed.",
           "data": {
             "name": "Medicine name (search or type)",
             "med_type": "Medicine type",
@@ -67,11 +67,29 @@
             "times_sat": "Sat — times (leave blank to use 'Times of day')",
             "times_sun": "Sun — times (leave blank to use 'Times of day')",
             "remind_window_minutes": "Mark as missed after (minutes)"
+          },
+          "sections": {
+            "identity_section": {
+              "name": "Identity",
+              "description": "Drug identity and dose. Picking a known medicine from the dropdown auto-fills ATC code and active substance."
+            },
+            "identifiers_section": {
+              "name": "Drug-database identifiers (optional)",
+              "description": "Varunummer, NPL ID, and ATC code. Auto-filled when you pick a medicine from the dropdown above; leave blank for free-text medicines."
+            },
+            "schedule_section": {
+              "name": "Schedule",
+              "description": "When to take this medicine. Daily fires every day. Weekly uses the days-of-week list. Monthly uses days-of-month (e.g. '1, 15' for 2× per month). Every-N-days uses the interval field below."
+            },
+            "per_weekday_section": {
+              "name": "Per-weekday time overrides (advanced)",
+              "description": "Optional. Leave all blank for the same times every firing day. Fill some to use different times on different weekdays (e.g. Mon-Fri 08:00, Sat-Sun 10:00). In per-weekday mode, an empty row means skip that weekday entirely."
+            }
           }
         },
         "reconfigure": {
           "title": "Reconfigure medicine",
-          "description": "Update the medicine's schedule, dose, or owner. Picking a different name from the dropdown will not overwrite ATC/notes if you've already filled them.",
+          "description": "Update the medicine's schedule, dose, or owner. Each section below can be expanded or collapsed. Picking a different name from the dropdown won't overwrite ATC code or notes if you've already filled them.",
           "data": {
             "name": "Medicine name (search or type)",
             "med_type": "Medicine type",
@@ -96,6 +114,24 @@
             "times_sat": "Sat — times (leave blank to use 'Times of day')",
             "times_sun": "Sun — times (leave blank to use 'Times of day')",
             "remind_window_minutes": "Mark as missed after (minutes)"
+          },
+          "sections": {
+            "identity_section": {
+              "name": "Identity",
+              "description": "Drug identity and dose."
+            },
+            "identifiers_section": {
+              "name": "Drug-database identifiers (optional)",
+              "description": "Varunummer, NPL ID, and ATC code."
+            },
+            "schedule_section": {
+              "name": "Schedule",
+              "description": "When to take this medicine. Daily / Weekly / Monthly / Every-N-days. Only the field for the chosen frequency applies."
+            },
+            "per_weekday_section": {
+              "name": "Per-weekday time overrides (advanced)",
+              "description": "Optional. Leave all blank for the same times every firing day. Fill some to use different times on different weekdays. Empty rows in per-weekday mode mean skip that weekday."
+            }
           }
         }
       },
