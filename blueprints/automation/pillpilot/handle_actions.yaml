@@ -19,18 +19,18 @@ action:
         sequence:
           - service: pillpilot.mark_taken
             data:
-              medicine_id: "{{ action[len('PILL_TAKEN_'):] }}"
+              medicine_id: "{{ action | replace('PILL_TAKEN_', '', 1) }}"
       - conditions: "{{ action.startswith('PILL_SNOOZE_') }}"
         sequence:
           - service: pillpilot.snooze
             data:
-              medicine_id: "{{ action[len('PILL_SNOOZE_'):] }}"
+              medicine_id: "{{ action | replace('PILL_SNOOZE_', '', 1) }}"
               minutes: 15
       - conditions: "{{ action.startswith('PILL_SKIP_') }}"
         sequence:
           - service: pillpilot.skip
             data:
-              medicine_id: "{{ action[len('PILL_SKIP_'):] }}"
+              medicine_id: "{{ action | replace('PILL_SKIP_', '', 1) }}"
 
 mode: parallel
 max: 25

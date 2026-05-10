@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.6] — 2026-05-10
+
+Blueprint hotfix. Drop-in upgrade from 0.2.5.
+
+- **`handle_actions` blueprint fixed.** Tapping Taken / Snooze / Skip on a PillPilot notification did nothing — the trace showed `UndefinedError: 'len' is undefined`, the matching `pillpilot.*` service never ran, and the dose stayed unmarked. The mobile_app integration dismisses the notification on action tap whether the automation succeeded or not, hiding the failure. Cause: `action[len('PILL_TAKEN_'):]` used Python's `len()`, which HA's Jinja2 sandbox doesn't expose. Replaced with the `replace` filter (`{{ action | replace('PILL_TAKEN_', '', 1) }}`) in all three branches. No integration code changed. Users need to re-import the blueprint and reload automations after upgrading. Fixes #3.
+
 ## [0.2.5] — 2026-05-09
 
 Bugfix release. Drop-in upgrade from 0.2.4.
