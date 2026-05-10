@@ -54,6 +54,7 @@ from .const import (
     EVENT_DOSE_DUE,
     EVENT_DOSE_MISSED,
     EVENT_DOSE_SKIPPED,
+    EVENT_DOSE_SNOOZED,
     EVENT_DOSE_TAKEN,
     EVENT_DOSE_UNMARKED,
     FREQ_DAILY,
@@ -67,6 +68,7 @@ from .const import (
     STATE_DUE,
     STATE_MISSED,
     STATE_SKIPPED,
+    STATE_SNOOZED,
     STATE_TAKEN,
     STATE_UPCOMING,
     STORAGE_KEY,
@@ -92,6 +94,15 @@ class DoseRecord:
     taken_at: str | None = None
     skipped_at: str | None = None
     missed_at: str | None = None
+    # v0.2.7: ISO timestamp of when the snooze expires. Set by
+    # async_snooze on the record for the original scheduled slot
+    # (matched on scheduled_for, not on a new synthetic time). The
+    # tick re-fires EVENT_DOSE_DUE once now >= snoozed_until and the
+    # slot is still untaken/unskipped. A snooze record without
+    # taken_at/skipped_at is "open"; once the user takes or skips,
+    # the same record gets stamped with taken_at/skipped_at and the
+    # snooze fields stay as historical breadcrumb.
+    snoozed_until: str | None = None
 
 
 @dataclass
@@ -451,9 +462,23 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         self,
         medicine_id: str,
         minutes: int,
+        scheduled_for: datetime | None = None,
         person_id: str | None = None,
     ) -> None:
         """Push the next reminder back by N minutes.
+
+        v0.2.7: writes ``snoozed_until`` onto the DoseRecord for the
+        original scheduled slot (not a synthetic now+N slot — that
+        was a no-op pre-0.2.7 because the synthetic time never
+        matched the RRULE-derived schedule). If a record already
+        exists for the slot (e.g. an earlier snooze on the same
+        slot), update its ``snoozed_until``; else create a fresh
+        snooze-only record.
+
+        Clears ``_fired_due`` for the slot so the tick re-fires
+        EVENT_DOSE_DUE once ``snoozed_until`` elapses. EVENT_DOSE_MISSED
+        is permanently suppressed for any slot that's been snoozed —
+        the user has already engaged.
 
         v0.2.24: ``person_id`` lets callers pin the snooze to a
         specific prescription. Without it we resolve to the closest
@@ -467,13 +492,53 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         if prescription is None:
             return
         resolved_pid = prescription.get(CONF_MED_PERSON) or None
-        record = DoseRecord(
-            medicine_id=medicine_id,
-            scheduled_for=(now + timedelta(minutes=minutes)).isoformat(),
-            person_id=resolved_pid,
+        scheduled = scheduled_for or self._closest_scheduled(prescription, now)
+        if scheduled is None:
+            return
+        sched_iso = scheduled.isoformat()
+        snoozed_until_iso = (now + timedelta(minutes=minutes)).isoformat()
+
+        history = self._history.setdefault(medicine_id, [])
+        existing = next(
+            (
+                r for r in history
+                if r.scheduled_for == sched_iso
+                and r.person_id == resolved_pid
+                and not r.taken_at
+                and not r.skipped_at
+            ),
+            None,
         )
-        self._history.setdefault(medicine_id, []).append(record)
+        if existing is not None:
+            existing.snoozed_until = snoozed_until_iso
+        else:
+            history.append(
+                DoseRecord(
+                    medicine_id=medicine_id,
+                    scheduled_for=sched_iso,
+                    person_id=resolved_pid,
+                    snoozed_until=snoozed_until_iso,
+                )
+            )
+
+        # Clear the fired-due cache so DUE re-fires once the snooze
+        # elapses. _fired_missed is intentionally not cleared — see
+        # the per-tick gating in _build_prescription_state.
+        self._fired_due.discard((medicine_id, resolved_pid, sched_iso))
+
         await self._async_save()
+        self.hass.bus.async_fire(
+            EVENT_DOSE_SNOOZED,
+            {
+                "medicine_id": medicine_id,
+                "name": med[CONF_MED_NAME],
+                "scheduled_for": sched_iso,
+                "snoozed_until": snoozed_until_iso,
+                "minutes": minutes,
+                "person_id": resolved_pid,
+                "person_name": self._person_name(resolved_pid),
+            },
+        )
         await self.async_request_refresh()
 
     async def async_unmark_taken(
@@ -653,27 +718,39 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
 
         for sched in scheduled_today:
             key = (med_id, person_id, sched.isoformat())
-            if sched <= now and key not in self._fired_due:
-                if not self._already_recorded(med_id, sched, person_id):
-                    self.hass.bus.async_fire(
-                        EVENT_DOSE_DUE,
-                        {
-                            "medicine_id": med_id,
-                            "name": med[CONF_MED_NAME],
-                            "dose": prescription.get(CONF_MED_DOSE, ""),
-                            "scheduled_for": sched.isoformat(),
-                            "person_id": person_id,
-                            "person_name": person_name,
-                        },
-                    )
-                    self._fired_due.add(key)
+            # v0.2.7: skip DUE while the slot is actively snoozed —
+            # the user asked to be reminded later, the tick refires
+            # DUE once snoozed_until elapses (async_snooze cleared
+            # this key from _fired_due so refire is unblocked).
+            if (
+                sched <= now
+                and key not in self._fired_due
+                and self._active_snooze(med_id, sched, person_id, now) is None
+                and not self._already_recorded(med_id, sched, person_id)
+            ):
+                self.hass.bus.async_fire(
+                    EVENT_DOSE_DUE,
+                    {
+                        "medicine_id": med_id,
+                        "name": med[CONF_MED_NAME],
+                        "dose": prescription.get(CONF_MED_DOSE, ""),
+                        "scheduled_for": sched.isoformat(),
+                        "person_id": person_id,
+                        "person_name": person_name,
+                    },
+                )
+                self._fired_due.add(key)
 
             window = prescription.get(
                 CONF_MED_REMIND_WINDOW, DEFAULT_REMIND_WINDOW
             )
+            # v0.2.7: a slot that's been snoozed at any point is
+            # exempt from MISSED — the user already engaged. They'll
+            # get the snooze-elapsed DUE ping; missed is redundant.
             if (
                 sched + timedelta(minutes=window) <= now
                 and key not in self._fired_missed
+                and not self._has_snoozed_record(med_id, sched, person_id)
                 and not self._already_recorded(med_id, sched, person_id)
             ):
                 self.hass.bus.async_fire(
@@ -765,12 +842,14 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
     def _aggregate_state(prescriptions: list[PrescriptionState]) -> str:
         """Worst-case state across prescriptions.
 
-        Order: due > missed > taken (all) > skipped (any) > upcoming.
+        Order: due > missed > snoozed > taken (all) > skipped (any) > upcoming.
         ``due`` wins because it's the call-to-action state — if any
         person has a pending dose, the sensor should reflect that.
-        ``missed`` ranks higher than ``taken`` because missed is also
-        action-relevant (logbook, dashboards, automations may want to
-        flag it). ``taken`` requires ALL prescriptions to be taken.
+        ``missed`` ranks higher than ``snoozed`` because a missed dose
+        is a dropped ball; a snoozed one is actively engaged.
+        ``snoozed`` ranks above ``taken`` because there's still
+        pending work — the user asked for a reminder.
+        ``taken`` requires ALL prescriptions to be taken.
         """
         if not prescriptions:
             return STATE_UPCOMING
@@ -779,6 +858,8 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
             return STATE_DUE
         if STATE_MISSED in states:
             return STATE_MISSED
+        if STATE_SNOOZED in states:
+            return STATE_SNOOZED
         if all(s == STATE_TAKEN for s in states):
             return STATE_TAKEN
         if STATE_SKIPPED in states:
@@ -891,6 +972,63 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
                 return True
         return False
 
+    def _slot_records(
+        self,
+        med_id: str,
+        scheduled: datetime,
+        person_id: str | None,
+    ) -> list[DoseRecord]:
+        """All records matching a (slot, person) pair."""
+        sched_iso = scheduled.isoformat()
+        return [
+            r for r in self._history.get(med_id, [])
+            if r.scheduled_for == sched_iso
+            and (person_id is None or r.person_id == person_id)
+        ]
+
+    def _active_snooze(
+        self,
+        med_id: str,
+        scheduled: datetime,
+        person_id: str | None,
+        now: datetime,
+    ) -> datetime | None:
+        """Return the snoozed_until datetime if the slot is currently
+        snoozed (and not taken/skipped), else None.
+
+        Used by the tick to gate EVENT_DOSE_DUE during a snooze
+        window, and by _today_doses_for / _derive_prescription_state
+        to surface the ``snoozed`` status.
+        """
+        matches = self._slot_records(med_id, scheduled, person_id)
+        if any(r.taken_at or r.skipped_at for r in matches):
+            return None
+        for r in matches:
+            if not r.snoozed_until:
+                continue
+            until = dt_util.parse_datetime(r.snoozed_until)
+            if until and until > now:
+                return until
+        return None
+
+    def _has_snoozed_record(
+        self,
+        med_id: str,
+        scheduled: datetime,
+        person_id: str | None,
+    ) -> bool:
+        """Has the slot ever been snoozed (and isn't taken/skipped)?
+
+        Used by the tick to permanently suppress EVENT_DOSE_MISSED for
+        a snoozed slot — once the user engaged via snooze, the missed
+        notification is redundant. If the slot eventually flips to
+        taken_at/skipped_at the gate releases (taken/skipped wins).
+        """
+        matches = self._slot_records(med_id, scheduled, person_id)
+        if any(r.taken_at or r.skipped_at for r in matches):
+            return False
+        return any(r.snoozed_until for r in matches)
+
     def _today_doses_for(
         self,
         med_id: str,
@@ -905,6 +1043,8 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         (filtered by person_id) and classify the slot:
           - taken    — there's a record with taken_at
           - skipped  — there's a record with skipped_at
+          - snoozed  — record with active snoozed_until (not elapsed),
+                       no taken_at/skipped_at
           - missed   — no record and now is past (sched + remind_window)
           - due      — no record and now is at or past sched
           - upcoming — sched is still in the future
@@ -915,28 +1055,42 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         and getting it wrong as soon as a dose is skipped or taken
         out of order.
 
+        v0.2.7: prefers terminal records (taken/skipped) over snooze
+        records on the same slot — a take-after-snooze correctly
+        reads as taken, not snoozed. The snoozed_until field is
+        passed through to the panel so it can render "Snoozed until
+        HH:MM" inline.
+
         v0.2.24: takes ``prescription`` (not the whole medicine) and
         ``person_id`` so multi-prescription medicines correctly
         attribute today's slots to the right person.
         """
         window = prescription.get(CONF_MED_REMIND_WINDOW, DEFAULT_REMIND_WINDOW)
-        history = self._history.get(med_id, [])
 
         out: list[dict[str, Any]] = []
         for sched in scheduled_today:
             sched_iso = sched.isoformat()
-            record = next(
-                (
-                    r for r in history
-                    if r.scheduled_for == sched_iso
-                    and (person_id is None or r.person_id == person_id)
-                ),
+            slot_records = self._slot_records(med_id, sched, person_id)
+            terminal = next(
+                (r for r in slot_records if r.taken_at or r.skipped_at),
                 None,
             )
+            record = terminal or (slot_records[0] if slot_records else None)
+
+            snoozed_until_iso: str | None = None
+            snoozed_active = False
+            if record and record.snoozed_until:
+                parsed = dt_util.parse_datetime(record.snoozed_until)
+                if parsed and parsed > now:
+                    snoozed_active = True
+
             if record and record.taken_at:
                 status, action_at = "taken", record.taken_at
             elif record and record.skipped_at:
                 status, action_at = "skipped", record.skipped_at
+            elif snoozed_active:
+                status, action_at = "snoozed", record.snoozed_until
+                snoozed_until_iso = record.snoozed_until
             elif now > sched + timedelta(minutes=window):
                 status, action_at = "missed", None
             elif now >= sched:
@@ -949,6 +1103,7 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
                     "time": sched.strftime("%H:%M"),
                     "status": status,
                     "action_at": action_at,
+                    "snoozed_until": snoozed_until_iso,
                 }
             )
         return out
@@ -966,6 +1121,12 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         single prescription instead of the whole medicine. Multiple
         prescriptions on the same medicine each get their own state;
         ``_aggregate_state`` combines them at the medicine level.
+
+        v0.2.7: a slot with an active snooze surfaces STATE_SNOOZED.
+        Snoozed past the window also reads as snoozed — the user
+        explicitly asked for the deferred reminder, so we don't
+        flip back to MISSED until they take/skip or the snooze
+        actually elapses.
         """
         med_id = med[CONF_MED_ID]
         person_id = prescription.get(CONF_MED_PERSON) or None
@@ -973,9 +1134,16 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
 
         for sched in scheduled_today:
             recorded = self._already_recorded(med_id, sched, person_id)
+            snoozed = self._active_snooze(med_id, sched, person_id, now) is not None
             if sched <= now <= sched + timedelta(minutes=window):
-                return STATE_TAKEN if recorded else STATE_DUE
+                if recorded:
+                    return STATE_TAKEN
+                if snoozed:
+                    return STATE_SNOOZED
+                return STATE_DUE
             if now > sched + timedelta(minutes=window) and not recorded:
+                if snoozed:
+                    return STATE_SNOOZED
                 if sched == max(s for s in scheduled_today if s <= now):
                     return STATE_MISSED
 

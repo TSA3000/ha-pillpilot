@@ -1,31 +1,26 @@
-# v0.2.6
+# v0.2.7
 
-> Blueprint hotfix. Drop-in upgrade from 0.2.5.
+> Snooze fix. Drop-in upgrade from 0.2.6.
 
 ## What's fixed
 
-The `handle_actions` blueprint failed with `UndefinedError: 'len' is undefined` whenever a Taken / Snooze / Skip button was tapped on a PillPilot notification. Home Assistant's Jinja2 sandbox doesn't expose Python's `len()` as a global, so `action[len('PILL_TAKEN_'):]` raised before the service call. The mobile_app integration dismisses the notification on action tap regardless of whether the automation succeeded, so the symptom was: notification disappears, dose stays unmarked.
+Snooze didn't work pre-0.2.7. Tapping `Snooze 15m` on a PillPilot notification (or calling `pillpilot.snooze` directly) wrote a junk `DoseRecord` with `scheduled_for = now + 15min` and called it done. That synthetic time never matched any of the medicine's RRULE-derived slots, so:
 
-Replaced the `len()` slicing with the `replace` filter, which works in the sandbox:
+- The original dose stayed `due` and then flipped to `missed` after the remind window, exactly as if no snooze had been tapped.
+- No follow-up `pillpilot_dose_due` event ever fired, so the blueprint never re-sent the notification.
+- The orphan record sat in `.storage/pillpilot.history.<entry>` forever.
 
-```yaml
-medicine_id: "{{ action | replace('PILL_TAKEN_', '', 1) }}"
-```
+## What's new
 
-Same fix applied to all three branches (Taken, Snooze, Skip).
+Snooze now stamps `snoozed_until` on the `DoseRecord` for the original scheduled slot. The tick re-fires `pillpilot_dose_due` when the snooze elapses, and `notify_dose` sends a fresh notification with Taken / Snooze / Skip. Snoozed slots are exempt from `pillpilot_dose_missed` — the user already engaged.
 
-No integration code changed — blueprint-only fix.
-
-Fixes [#3](https://github.com/TSA3000/ha-pillpilot/issues/3).
+- New `pillpilot_dose_snoozed` event with `medicine_id`, `scheduled_for`, `snoozed_until`, `minutes`, `person_id`.
+- New `snoozed` sensor state. Per-slot `today_doses` carries `snoozed_until`.
+- `pillpilot.snooze` accepts an optional `scheduled_for` for multi-slot medicines.
+- Panel renders snoozed slots as "⏰ Snoozed until HH:MM" with inline Take / Skip override buttons.
 
 ## Upgrading
 
 Replace the `pillpilot` directory in `custom_components/` with the contents of this zip and restart Home Assistant. HACS users: update normally.
 
-**Then re-import the `handle_actions` blueprint** so existing automations pick up the fix:
-
-1. **Settings → Automations & Scenes → Blueprints**.
-2. Find **PillPilot — handle notification actions**, click the ⋮ menu → **Re-import blueprint**.
-3. **Developer Tools → YAML → Reload Automations** (or restart HA).
-
-Existing automations created from the blueprint don't need to be re-created.
+Pre-0.2.7 orphan snooze records are harmless — they don't match any scheduled slot, so the new lookup ignores them. To purge them now, stop HA, delete `.storage/pillpilot.history.<entry_id>`, restart. (Note: this also clears your taken/skipped history.)

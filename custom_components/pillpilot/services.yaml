@@ -59,7 +59,7 @@ skip:
 
 snooze:
   name: Snooze reminder
-  description: Push the current reminder out by N minutes.
+  description: Defer a scheduled dose by N minutes — the integration re-fires pillpilot_dose_due when the snooze elapses, so notifications hooked up to that event ring again. EVENT_DOSE_MISSED is suppressed for any slot that's been snoozed.
   fields:
     medicine_id:
       name: Medicine ID
@@ -74,6 +74,13 @@ snooze:
       selector:
         entity:
           domain: person
+    scheduled_for:
+      name: Scheduled for
+      description: Which scheduled slot to snooze. Use this when a medicine has multiple times per day. Defaults to the closest scheduled time.
+      required: false
+      example: "2026-05-04T08:00:00+02:00"
+      selector:
+        datetime:
     minutes:
       name: Minutes
       required: true

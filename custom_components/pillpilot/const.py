@@ -122,6 +122,7 @@ EVENT_DOSE_DUE = f"{DOMAIN}_dose_due"
 EVENT_DOSE_MISSED = f"{DOMAIN}_dose_missed"
 EVENT_DOSE_TAKEN = f"{DOMAIN}_dose_taken"
 EVENT_DOSE_SKIPPED = f"{DOMAIN}_dose_skipped"
+EVENT_DOSE_SNOOZED = f"{DOMAIN}_dose_snoozed"
 EVENT_DOSE_UNMARKED = f"{DOMAIN}_dose_unmarked"
 
 # ---- services -------------------------------------------------------
@@ -146,6 +147,7 @@ STATE_UPCOMING = "upcoming"
 STATE_TAKEN = "taken"
 STATE_MISSED = "missed"
 STATE_SKIPPED = "skipped"
+STATE_SNOOZED = "snoozed"
 
 # ---------------------------------------------------------------------------
 # Sidebar panel visibility (added in v0.2.3)

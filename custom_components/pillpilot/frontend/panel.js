@@ -35,6 +35,7 @@ const STATE_UPCOMING = "upcoming";
 const STATE_TAKEN = "taken";
 const STATE_MISSED = "missed";
 const STATE_SKIPPED = "skipped";
+const STATE_SNOOZED = "snoozed";
 
 // Medicine type IDs. Wire format — these strings ARE the identifiers
 // stored in subentry data and exposed on sensor attributes. Mirrors
@@ -50,9 +51,12 @@ const STATE_LABELS = {
   [STATE_TAKEN]: { text: "taken", kind: "success" },
   [STATE_MISSED]: { text: "missed", kind: "error" },
   [STATE_SKIPPED]: { text: "skipped", kind: "neutral" },
+  [STATE_SNOOZED]: { text: "snoozed", kind: "info" },
 };
 
-// Per-slot statuses that should show action buttons.
+// Per-slot statuses that should show action buttons. Snoozed has its
+// own renderer in _renderRowActions (label + Take/Skip), so it's
+// intentionally NOT in this set — the snoozed branch handles it.
 const ACTIONABLE = new Set([STATE_DUE, STATE_MISSED, STATE_UPCOMING]);
 // Per-slot statuses that "Mark all due" should target. Excludes upcoming
 // — marking a 21:00 dose at 09:00 would be misleading.
@@ -225,6 +229,13 @@ const STYLES = `
   }
   .dose-status-label.taken { color: var(--success-color, #4caf50); }
   .dose-status-label.skipped { color: var(--secondary-text-color, #727272); }
+  .dose-status-label.snoozed { color: var(--info-color, #03a9f4); }
+  .dose-snoozed-wrapper {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
 
   /* v0.2.17: per-dose hover-to-undo on taken doses.
      Hover the green "✓ Taken at HH:MM" badge → it's hidden and the
@@ -1287,16 +1298,17 @@ class PillPilotPanel extends HTMLElement {
   }
 
   // Map state strings to a priority order for status sort.
-  // Lowest = first when ascending: due > missed > upcoming > taken > skipped.
+  // Lowest = first when ascending: due > missed > snoozed > upcoming > taken > skipped.
   // The "due first" reading users expect.
   _statePriority(state) {
     switch (state) {
       case STATE_DUE: return 0;
       case STATE_MISSED: return 1;
-      case STATE_UPCOMING: return 2;
-      case STATE_TAKEN: return 3;
-      case STATE_SKIPPED: return 4;
-      default: return 5;
+      case STATE_SNOOZED: return 2;
+      case STATE_UPCOMING: return 3;
+      case STATE_TAKEN: return 4;
+      case STATE_SKIPPED: return 5;
+      default: return 6;
     }
   }
 
@@ -1590,7 +1602,7 @@ class PillPilotPanel extends HTMLElement {
       // signature even when prescription state is unchanged.
       for (const p of prescriptions) {
         const td = (p.today_doses || [])
-          .map((d) => `${d.time}:${d.status}:${d.action_at || ""}`)
+          .map((d) => `${d.time}:${d.status}:${d.action_at || ""}:${d.snoozed_until || ""}`)
           .join(",");
         parts.push([
           m.entity_id,
@@ -1629,6 +1641,7 @@ class PillPilotPanel extends HTMLElement {
             time: slot.time,
             status: slot.status,
             actionAt: slot.action_at,
+            snoozedUntil: slot.snoozed_until || null,
             name,
             dose: p.dose || "",
             personName: p.person_name || null,
@@ -1982,12 +1995,15 @@ class PillPilotPanel extends HTMLElement {
     const group = this._findPersonGroup(personKey);
     if (!group) return;
     // "Take all today" = every dose today not yet acted on. Covers
-    // due + upcoming + missed. Excludes taken and skipped.
+    // due + upcoming + missed + snoozed. Excludes taken and skipped.
+    // Snoozed is included because the bulk action represents an
+    // explicit user override of any prior snooze.
     const targets = group.doses.filter(
       (d) =>
         d.status === STATE_DUE ||
         d.status === STATE_UPCOMING ||
-        d.status === STATE_MISSED
+        d.status === STATE_MISSED ||
+        d.status === STATE_SNOOZED
     );
     this._executeBulkForPerson(personKey, targets);
   }
@@ -3438,25 +3454,29 @@ class PillPilotPanel extends HTMLElement {
       missedCount = 0,
       upcomingCount = 0,
       takenCount = 0,
-      skippedCount = 0;
+      skippedCount = 0,
+      snoozedCount = 0;
     for (const d of doses) {
       if (d.status === STATE_DUE) dueCount++;
       else if (d.status === STATE_MISSED) missedCount++;
       else if (d.status === STATE_UPCOMING) upcomingCount++;
       else if (d.status === STATE_TAKEN) takenCount++;
       else if (d.status === STATE_SKIPPED) skippedCount++;
+      else if (d.status === STATE_SNOOZED) snoozedCount++;
     }
-    const nonTakenCount = dueCount + missedCount + upcomingCount;
+    const nonTakenCount = dueCount + missedCount + upcomingCount + snoozedCount;
     const expanded = this._isPersonExpanded(personKey, nonTakenCount > 0);
     const arrow = expanded ? "▼" : "▶";
 
     // Status summary — short and human. Priority order: due > missed
-    // > upcoming > all-taken.
+    // > snoozed > upcoming > all-taken.
     let summary;
     if (dueCount > 0) {
       summary = `${dueCount} due`;
     } else if (missedCount > 0) {
       summary = `${missedCount} missed`;
+    } else if (snoozedCount > 0) {
+      summary = `${snoozedCount} snoozed`;
     } else if (upcomingCount > 0) {
       summary = `${upcomingCount} upcoming`;
     } else if (doses.length > 0 && takenCount === doses.length - skippedCount) {
@@ -3467,7 +3487,7 @@ class PillPilotPanel extends HTMLElement {
 
     const hasUndo = (this._lastActionMap[personKey] || []).length > 0;
 
-    // Disabled flags. The "[Take all]" button covers due+upcoming+missed,
+    // Disabled flags. The "[Take all]" button covers due+upcoming+missed+snoozed,
     // so it's enabled when any of those are present. "[Take due]" only
     // enabled when there's at least one due. Kebab items each have
     // their own enabled-when conditions.
@@ -3547,6 +3567,24 @@ class PillPilotPanel extends HTMLElement {
     if (d.status === STATE_SKIPPED) {
       const at = this._formatActionTime(d.actionAt);
       return `<div class="dose-status-label skipped">⊘ Skipped${at ? ` at ${escapeHtml(at)}` : ""}</div>`;
+    }
+    if (d.status === STATE_SNOOZED) {
+      // Snooze surfaces the elapse time (action_at carries snoozed_until)
+      // alongside Take/Skip so the user can override their own snooze.
+      // Once snoozed_until elapses the slot flips back to due/missed
+      // automatically — the panel re-renders on the next sensor tick.
+      const until = this._formatActionTime(d.actionAt);
+      const sched = escapeHtml(d.scheduledAt || "");
+      const medId = escapeHtml(d.medicineId);
+      return `
+        <div class="dose-snoozed-wrapper">
+          <div class="dose-status-label snoozed">⏰ Snoozed${until ? ` until ${escapeHtml(until)}` : ""}</div>
+          <div class="dose-actions">
+            <button class="dose-action-btn take" data-action="take" data-medicine-id="${medId}" data-scheduled-at="${sched}">Take</button>
+            <button class="dose-action-btn skip" data-action="skip" data-medicine-id="${medId}" data-scheduled-at="${sched}">Skip</button>
+          </div>
+        </div>
+      `;
     }
     if (ACTIONABLE.has(d.status)) {
       const sched = escapeHtml(d.scheduledAt || "");

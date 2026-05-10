@@ -200,7 +200,7 @@
     },
     "snooze": {
       "name": "Snooze",
-      "description": "Push the reminder out."
+      "description": "Defer a scheduled dose. The integration re-fires the dose-due event when the snooze elapses."
     },
     "unmark_taken": {
       "name": "Unmark dose as taken",

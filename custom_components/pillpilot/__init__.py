@@ -63,6 +63,7 @@ SNOOZE_SCHEMA = vol.Schema(
     {
         vol.Required("medicine_id"): cv.string,
         vol.Optional("person_id"): vol.Any(cv.string, None),
+        vol.Optional("scheduled_for"): cv.datetime,
         vol.Required("minutes", default=15): vol.All(int, vol.Range(min=1, max=240)),
     }
 )
@@ -396,10 +397,14 @@ def _register_services(hass: HomeAssistant) -> None:
     async def handle_snooze(call: ServiceCall) -> None:
         med_id = call.data["medicine_id"]
         person_id: str | None = call.data.get("person_id")
+        scheduled_for: datetime | None = call.data.get("scheduled_for")
         coord = await _resolve(med_id)
         if coord:
             await coord.async_snooze(
-                med_id, call.data["minutes"], person_id=person_id
+                med_id,
+                call.data["minutes"],
+                scheduled_for=scheduled_for,
+                person_id=person_id,
             )
 
     async def handle_unmark_taken(call: ServiceCall) -> None:

@@ -200,7 +200,7 @@
     },
     "snooze": {
       "name": "Snooza",
-      "description": "Skjut upp påminnelsen."
+      "description": "Skjut upp en schemalagd dos. Integrationen avfyrar dose-due-eventet igen när snoozen löper ut."
     },
     "unmark_taken": {
       "name": "Ångra tagen dos",

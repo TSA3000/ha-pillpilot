@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.7] — 2026-05-10
+
+Snooze fix. Drop-in upgrade from 0.2.6.
+
+- **Snooze actually works.** Tapping Snooze 15m on a notification (or calling `pillpilot.snooze`) used to be a no-op: the integration wrote a junk `DoseRecord` with `scheduled_for = now + 15min`, which never matched any RRULE-derived slot. The original dose stayed `due`, then flipped to `missed`, no follow-up notification ever fired, and the orphan record sat in `.storage` forever. Snooze now writes `snoozed_until` onto the record for the original scheduled slot; the tick re-fires `pillpilot_dose_due` once the snooze elapses, and the bundled `notify_dose` blueprint sends a fresh notification with the same Taken / Snooze / Skip buttons.
+- **New `pillpilot_dose_snoozed` event** on the bus. Fires immediately when a snooze is recorded, with `medicine_id`, `scheduled_for`, `snoozed_until`, `minutes`, and `person_id`. Useful for logbook entries and custom automations.
+- **New `snoozed` sensor state and per-slot status.** `sensor.<medicine>` reports `snoozed` while any of its prescriptions is in an active snooze window. The panel's `today_doses` array carries `snoozed_until` per slot.
+- **`pillpilot_dose_missed` is suppressed for snoozed slots.** The user already engaged via snooze; firing missed on top would be redundant. Slots that are never snoozed still go to missed normally.
+- **`pillpilot.snooze` accepts `scheduled_for`.** Lets callers pin the snooze to a specific slot for medicines with multiple times per day. Defaults to the closest scheduled time when omitted.
+- **Panel UI.** Snoozed slots show "⏰ Snoozed until HH:MM" inline with Take / Skip buttons, so the user can override the snooze. Section header surfaces the snoozed count between missed and upcoming. Status sort priority: due > missed > snoozed > upcoming > taken > skipped.
+- **`DoseRecord` schema:** added `snoozed_until: str | None`. Forward-compatible — existing records load with `snoozed_until=None` and behave exactly as before.
+- **Pre-0.2.7 orphan snooze records are harmless.** They wrote a synthetic `scheduled_for` that doesn't match any RRULE-derived slot, so the new lookup in `_today_doses_for` quietly ignores them. Manually purge `.storage/pillpilot.history.<entry>` to clear them if you want a clean slate.
+
 ## [0.2.6] — 2026-05-10
 
 Blueprint hotfix. Drop-in upgrade from 0.2.5.
