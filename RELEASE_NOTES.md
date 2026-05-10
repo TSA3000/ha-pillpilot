@@ -1,28 +1,15 @@
-# v0.2.9
+# v0.2.10
 
-> Medicine list rebuilt from Läkemedelsverket. Drop-in upgrade from 0.2.8.
+> Two fixes from v0.2.9 testing. Drop-in upgrade from 0.2.9.
 
-## What's new
+## What's fixed
 
-`medicines_se.json` is now generated from [Läkemedelsverket's open-data register](https://www.dataportal.se/datasets/140_5467) (Sök läkemedelsfakta, dataset 140_5467) instead of being hand-curated. 216 entries → 7331. Covers every human medicine currently `Godkänd` or `Registrerad`. Veterinary and deregistered products are filtered at build time. Snapshot 2026-05-10.
+**Bundled medicines list wins when newer.** Pre-v0.2.10 the stored copy in `.storage/pillpilot.medicines_se` always won over the integration's bundled file. So if you'd ever clicked **Refresh medicine list now** in an earlier release, you stayed stuck on that cached list across HACS upgrades — the v0.2.9 jump from 216 to 7331 entries was invisible until you manually refreshed again. `MedicineDatabase.async_load` now compares `list_version` on the two and picks the newer one. Explicit URL refreshes ahead of the bundle still take precedence.
 
-Each entry now carries `npl_id`, and `aliases` includes former product names from the `Tidigare läkemedelsnamn` column — searching an old brand name finds the current entry.
-
-## Build tool
-
-`tools/build_medicines_se.py` regenerates the JSON from a fresh `Lakemedelsprodukter.xlsx` export. Maintainer tool — not shipped in the integration zip.
-
-```
-pip install openpyxl
-python tools/build_medicines_se.py \
-    --input ~/Downloads/Lakemedelsprodukter.xlsx \
-    --output custom_components/pillpilot/medicines_se.json
-```
-
-Curated aliases on existing entries are preserved across rebuilds.
+**NPL ID auto-fills from the catalog.** When you pick a known medicine in the panel's Add/Edit modal, the NPL ID field now populates from the Läkemedelsverket export, the same way ATC code and active substance already do. Three spots that all had to be in sync: `_normalize_entry` preserves the field on load, `sanitize_for_ws` forwards it to the panel, and `_applyDrugNameAutoFill` writes it into the draft. Anything you typed yourself isn't overwritten.
 
 ## Upgrading
 
-Replace the `pillpilot` directory in `custom_components/` with the contents of this zip and restart Home Assistant. HACS users: update normally. Existing medicines are unaffected.
+Replace the `pillpilot` directory in `custom_components/` with the contents of this zip and restart Home Assistant. HACS users: update normally.
 
-ATC codes come straight from Läkemedelsverket. Still verify against FASS or Sök VARA before relying on them clinically.
+Anyone on the v0.2.9 bundled list (`2026.05.10-1`) and a stored copy from before will be flipped to the bundled list on first load after this upgrade. Existing medicines configured before the upgrade are unaffected.

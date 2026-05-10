@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.10] — 2026-05-10
+
+Two fixes from v0.2.9 testing. Drop-in upgrade from 0.2.9.
+
+- **Bundled medicines list wins when newer.** `MedicineDatabase.async_load` now compares `list_version` between the integration's bundled file and the user's stored copy; the lexicographically newer one wins (the `YYYY.MM.DD-N` format sorts correctly that way). Pre-v0.2.10, anyone who'd ever clicked **Refresh medicine list now** stayed pinned to that cached list across integration upgrades — the v0.2.9 jump from 216 to 7331 bundled entries was invisible until a manual re-refresh. Explicit URL refreshes ahead of the bundle still win.
+- **NPL ID auto-fills from the catalog.** Picking a known medicine in the Add/Edit modal now populates the NPL ID field the same way ATC code and active substance already do. Three spots fixed: `_normalize_entry` preserves `npl_id` on load (was being stripped), `sanitize_for_ws` forwards it to the panel over `pillpilot/get_medicines_db`, and `_applyDrugNameAutoFill` copies it into the draft when empty. User-entered NPL IDs are never overwritten.
+
 ## [0.2.9] — 2026-05-10
 
 Medicine list rebuilt from Läkemedelsverket. Drop-in upgrade from 0.2.8.

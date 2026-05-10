@@ -84,6 +84,7 @@ def _normalize_entry(raw: dict[str, Any]) -> dict[str, Any] | None:
         "aliases": [str(a).strip() for a in aliases_raw if str(a).strip()],
         "active_substance": str(raw.get("active_substance") or "").strip(),
         "atc_code": str(raw.get("atc_code") or "").strip(),
+        "npl_id": str(raw.get("npl_id") or "").strip(),
         "common_forms": [str(f).strip() for f in forms_raw if str(f).strip()],
     }
 
@@ -144,35 +145,65 @@ class MedicineDatabase:
         return self._loaded
 
     async def async_load(self) -> None:
-        """Load on integration startup. Stored copy wins over bundled."""
+        """Load on integration startup. Bundled wins if it's newer.
+
+        v0.2.10: compares ``list_version`` between the integration's
+        bundled file and any stored copy. The lexicographically newer
+        one wins — the ``YYYY.MM.DD-N`` format sorts correctly that
+        way. Pre-v0.2.10 the stored copy always won, so users who'd
+        ever clicked **Refresh** stayed pinned to that cached list
+        across integration upgrades and never saw new bundled
+        medicines (e.g. the v0.2.9 jump from 216 → 7331 entries was
+        invisible to anyone with a stored copy). Explicit URL
+        refreshes still win when the URL is ahead of the bundle.
+        """
         stored = await self._store.async_load()
+        stored_version = ""
         if stored and isinstance(stored, dict) and stored.get("medicines"):
-            self._data = _normalize_list(stored)
-            self._loaded = True
-            _LOGGER.debug(
-                "Loaded medicines list from storage (version=%s, count=%d)",
-                self._data["list_version"], len(self._data["medicines"]),
-            )
-            return
-        # Fall back to bundled file
+            stored_version = str(stored.get("list_version") or "")
+
+        bundled_data: dict[str, Any] | None = None
         try:
             bundled_text = await self._hass.async_add_executor_job(
                 BUNDLED_PATH.read_text, "utf-8"
             )
-            self._data = _normalize_list(json.loads(bundled_text))
-            self._loaded = True
-            _LOGGER.debug(
-                "Loaded bundled medicines list (version=%s, count=%d)",
-                self._data["list_version"], len(self._data["medicines"]),
-            )
+            bundled_data = json.loads(bundled_text)
         except (OSError, json.JSONDecodeError) as err:
-            _LOGGER.error(
+            _LOGGER.warning(
                 "Could not load bundled medicines list at %s: %s",
                 BUNDLED_PATH, err,
             )
-            # Empty doc — autocomplete dropdown will simply have no options
-            self._data = _empty_doc()
+        bundled_version = str((bundled_data or {}).get("list_version") or "")
+
+        if bundled_data and (
+            not stored_version or bundled_version > stored_version
+        ):
+            self._data = _normalize_list(bundled_data)
             self._loaded = True
+            _LOGGER.debug(
+                "Loaded bundled medicines list (version=%s, count=%d, "
+                "stored=%s)",
+                self._data["list_version"], len(self._data["medicines"]),
+                stored_version or "none",
+            )
+            return
+
+        if stored and isinstance(stored, dict) and stored.get("medicines"):
+            self._data = _normalize_list(stored)
+            self._loaded = True
+            _LOGGER.debug(
+                "Loaded medicines list from storage (version=%s, count=%d, "
+                "bundled=%s)",
+                self._data["list_version"], len(self._data["medicines"]),
+                bundled_version or "none",
+            )
+            return
+
+        _LOGGER.error(
+            "Could not load any medicines list (stored=missing, bundled=missing)"
+        )
+        self._data = _empty_doc()
+        self._loaded = True
 
     async def async_refresh_from_url(self, url: str) -> tuple[bool, str]:
         """Fetch a fresh medicines list from `url` and persist it.
@@ -323,11 +354,11 @@ def sanitize_for_ws(
 ) -> list[dict[str, Any]]:
     """Project the medicines list down to the fields the panel needs.
 
-    The panel's autocomplete/auto-fill needs only ``name``, ``aliases``,
-    ``active_substance`` and ``atc_code``. The bundled list also carries
-    ``common_forms``, vendor metadata, and pre-list comments — all
-    irrelevant on the wire and worth not shipping over the websocket
-    on every panel load.
+    The panel's autocomplete/auto-fill needs ``name``, ``aliases``,
+    ``active_substance``, ``atc_code`` and (since v0.2.10) ``npl_id``.
+    The bundled list also carries ``common_forms``, vendor metadata,
+    and pre-list comments — all irrelevant on the wire and worth not
+    shipping over the websocket on every panel load.
 
     Nameless entries are dropped; missing optional fields are emitted
     as empty strings so the panel can rely on the shape.
@@ -347,5 +378,6 @@ def sanitize_for_ws(
             "aliases": aliases,
             "active_substance": (med.get("active_substance") or "").strip(),
             "atc_code": (med.get("atc_code") or "").strip(),
+            "npl_id": (med.get("npl_id") or "").strip(),
         })
     return out

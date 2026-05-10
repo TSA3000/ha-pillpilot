@@ -1565,8 +1565,8 @@ class PillPilotPanel extends HTMLElement {
   }
 
   // Apply auto-fill to the Add/Edit draft based on a typed-or-picked
-  // value in the drug-name field. Fills empty atc_code + notes from
-  // the matched catalog entry; never overwrites user-entered values.
+  // value in the drug-name field. Fills empty atc_code + npl_id + notes
+  // from the matched catalog entry; never overwrites user-entered values.
   // Returns true if anything in the draft changed (caller decides
   // whether to re-render).
   _applyDrugNameAutoFill(typedValue) {
@@ -1586,6 +1586,11 @@ class PillPilotPanel extends HTMLElement {
     const userAtc = (draft.drug.atc_code || "").trim();
     if (!userAtc && hit.atc_code) {
       draft.drug.atc_code = hit.atc_code;
+      changed = true;
+    }
+    const userNpl = (draft.drug.npl_id || "").trim();
+    if (!userNpl && hit.npl_id) {
+      draft.drug.npl_id = hit.npl_id;
       changed = true;
     }
     const userNotes = (draft.drug.notes || "").trim();
