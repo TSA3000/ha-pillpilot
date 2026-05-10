@@ -111,6 +111,43 @@ def _normalize_list(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _bundled_has_content_drift(
+    bundled_data: dict[str, Any] | None,
+    stored: Any,
+) -> bool:
+    """Detect a schema upgrade that didn't bump ``list_version``.
+
+    v0.2.11: a same-version comparison isn't enough — when the
+    integration adds a new field on entries (e.g. ``npl_id`` in
+    v0.2.10) without bumping ``list_version``, the bundled-wins
+    check on version alone leaves users on the stored copy
+    forever. This helper samples up to 500 entries from each
+    side and flags drift when bundled has a field populated on
+    >25% of entries while stored has it on <5%: a strong signal
+    that the stored copy was written by an older normalizer
+    that stripped the field.
+    """
+    if not bundled_data or not isinstance(stored, dict):
+        return False
+    bundled_meds = bundled_data.get("medicines") or []
+    stored_meds = stored.get("medicines") or []
+    if not bundled_meds or not stored_meds:
+        return False
+    sample = min(500, len(bundled_meds), len(stored_meds))
+    for field in ("npl_id", "atc_code", "active_substance"):
+        b_pop = sum(
+            1 for m in bundled_meds[:sample]
+            if isinstance(m.get(field), str) and m[field].strip()
+        )
+        s_pop = sum(
+            1 for m in stored_meds[:sample]
+            if isinstance(m.get(field), str) and m[field].strip()
+        )
+        if b_pop > sample * 0.25 and s_pop < sample * 0.05:
+            return True
+    return False
+
+
 class MedicineDatabase:
     """Owns the in-memory medicines list + the refresh logic.
 
@@ -145,7 +182,8 @@ class MedicineDatabase:
         return self._loaded
 
     async def async_load(self) -> None:
-        """Load on integration startup. Bundled wins if it's newer.
+        """Load on integration startup. Bundled wins if it's newer
+        or if there's content drift.
 
         v0.2.10: compares ``list_version`` between the integration's
         bundled file and any stored copy. The lexicographically newer
@@ -156,6 +194,16 @@ class MedicineDatabase:
         medicines (e.g. the v0.2.9 jump from 216 → 7331 entries was
         invisible to anyone with a stored copy). Explicit URL
         refreshes still win when the URL is ahead of the bundle.
+
+        v0.2.11: same-version comparison isn't enough when a release
+        adds a field on entries without bumping ``list_version`` —
+        v0.2.10 added ``npl_id`` per entry while keeping the
+        ``2026.05.10-1`` version, leaving the v0.2.10 fix invisible
+        to anyone whose stored cache was written by v0.2.9's
+        normalizer. ``_bundled_has_content_drift`` samples entries
+        from both sides and forces a bundled reload when the
+        bundled has a populated field the stored copy lacks across
+        the board.
         """
         stored = await self._store.async_load()
         stored_version = ""
@@ -175,16 +223,23 @@ class MedicineDatabase:
             )
         bundled_version = str((bundled_data or {}).get("list_version") or "")
 
-        if bundled_data and (
-            not stored_version or bundled_version > stored_version
-        ):
+        version_wins = (
+            bundled_data is not None
+            and (not stored_version or bundled_version > stored_version)
+        )
+        drift_wins = bundled_data is not None and _bundled_has_content_drift(
+            bundled_data, stored
+        )
+
+        if version_wins or drift_wins:
             self._data = _normalize_list(bundled_data)
             self._loaded = True
             _LOGGER.debug(
                 "Loaded bundled medicines list (version=%s, count=%d, "
-                "stored=%s)",
+                "stored=%s, reason=%s)",
                 self._data["list_version"], len(self._data["medicines"]),
                 stored_version or "none",
+                "version" if version_wins else "content_drift",
             )
             return
 

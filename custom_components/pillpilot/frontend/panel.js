@@ -1994,6 +1994,37 @@ class PillPilotPanel extends HTMLElement {
     this._hass.callService("pillpilot", "unmark_taken", data);
   }
 
+  // v0.2.11: one-shot catalog backfill across all configured medicines.
+  // Wraps the pillpilot.backfill_from_catalog service. Fire-and-toast —
+  // the service handler logs the per-entry count, the toast just signals
+  // completion. Failures are surfaced inline.
+  _backfillFromCatalog() {
+    if (!this._hass) return;
+    this._toggleKebab("global");
+    this._hass
+      .callService("pillpilot", "backfill_from_catalog", {})
+      .then(() => {
+        this._toast(
+          "Backfill complete — check Settings → System → Logs for the count."
+        );
+      })
+      .catch((err) => {
+        const msg = err && err.message ? err.message : String(err);
+        this._toast(`Backfill failed: ${msg}`);
+      });
+  }
+
+  // Fires the HA frontend's built-in toast.
+  _toast(message) {
+    this.dispatchEvent(
+      new CustomEvent("hass-notification", {
+        detail: { message },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
   // Bulk action helpers — each scopes to a single person's doses.
   // The kebab menu's "Undo last action" walks _lastActionMap[personKey]
   // back through unmark_taken, so each helper records what it sent.
@@ -3464,6 +3495,12 @@ class PillPilotPanel extends HTMLElement {
           </div>
           <div class="header-actions">
             <button class="config-btn" data-action="open-config" aria-label="Configure integration" title="Configure integration">⚙</button>
+            <div class="kebab-wrapper">
+              <button class="config-btn" data-action="toggle-kebab" data-person-key="global" aria-label="More actions" title="More actions">⋮</button>
+              <div class="kebab-menu" data-kebab-for="global">
+                <button data-action="backfill-from-catalog">Backfill empty fields from catalog</button>
+              </div>
+            </div>
             <button class="add-btn" data-action="add">+ Add medicine</button>
           </div>
         </header>
@@ -3890,6 +3927,13 @@ class PillPilotPanel extends HTMLElement {
         e.preventDefault();
         e.stopPropagation();
         this._toggleKebab(e.currentTarget.dataset.personKey);
+      });
+    });
+    root.querySelectorAll('[data-action="backfill-from-catalog"]').forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this._backfillFromCatalog();
       });
     });
     // Old global "Mark X due" button is gone in v0.2.17 — actions are

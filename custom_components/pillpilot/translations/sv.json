@@ -225,6 +225,10 @@
           "description": "Valfri. Om utelämnad används URL:en från integrationsinställningarna. Skicka med en URL här om du vill testa en annan fork utan att ändra inställningarna."
         }
       }
+    },
+    "backfill_from_catalog": {
+      "name": "Fyll i från katalog",
+      "description": "Går igenom varje konfigurerad medicin och fyller i tomma NPL ID och ATC-kod från den medföljande katalogen genom att matcha på medicinnamn. Befintliga värden skrivs aldrig över. Användbar för mediciner som lades till innan automatisk katalogifyllning fanns."
     }
   }
 }

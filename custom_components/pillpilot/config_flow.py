@@ -330,6 +330,9 @@ def validate_medicine_input(
     user_atc = (user_input.get(CONF_MED_ATC_CODE) or "").strip()
     catalog_atc = (lookup or {}).get("atc_code", "")
     atc_final = user_atc or catalog_atc or None
+    user_npl = (user_input.get(CONF_MED_NPL_ID) or "").strip()
+    catalog_npl = (lookup or {}).get("npl_id", "")
+    npl_final = user_npl or catalog_npl or None
     user_notes = user_input.get(CONF_MED_NOTES, "")
     if not user_notes and lookup and lookup.get("active_substance"):
         notes_final = f"Aktiv substans: {lookup['active_substance']}"
@@ -493,7 +496,7 @@ def validate_medicine_input(
         CONF_MED_NAME: med_name,
         CONF_MED_TYPE: dose.med_type,
         CONF_MED_NOTES: notes_final,
-        CONF_MED_NPL_ID: _strip_or_none(user_input.get(CONF_MED_NPL_ID)),
+        CONF_MED_NPL_ID: npl_final,
         CONF_MED_VARUNUMMER: _strip_or_none(user_input.get(CONF_MED_VARUNUMMER)),
         CONF_MED_ATC_CODE: atc_final,
         # prescriptions
@@ -901,6 +904,8 @@ def validate_medicine_input_multi(
     )
     user_atc = (drug.get(CONF_MED_ATC_CODE) or "").strip()
     atc_final = user_atc or (lookup.get("atc_code") if lookup else "") or None
+    user_npl = (drug.get(CONF_MED_NPL_ID) or "").strip()
+    npl_final = user_npl or (lookup.get("npl_id") if lookup else "") or None
     user_notes = (drug.get(CONF_MED_NOTES) or "").strip()
     if not user_notes and lookup and lookup.get("active_substance"):
         notes_final = lookup["active_substance"]
@@ -911,7 +916,7 @@ def validate_medicine_input_multi(
         CONF_MED_NAME: name,
         CONF_MED_TYPE: med_type,
         CONF_MED_NOTES: notes_final,
-        CONF_MED_NPL_ID: _strip_or_none(drug.get(CONF_MED_NPL_ID)),
+        CONF_MED_NPL_ID: npl_final,
         CONF_MED_VARUNUMMER: _strip_or_none(drug.get(CONF_MED_VARUNUMMER)),
         CONF_MED_ATC_CODE: atc_final,
         CONF_MED_PRESCRIPTIONS: validated_prescriptions,

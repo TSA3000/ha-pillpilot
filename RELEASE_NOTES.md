@@ -1,15 +1,19 @@
-# v0.2.10
+# v0.2.11
 
-> Two fixes from v0.2.9 testing. Drop-in upgrade from 0.2.9.
+> Catalog auto-fill cleanup. Drop-in upgrade from 0.2.10.
 
 ## What's fixed
 
-**Bundled medicines list wins when newer.** Pre-v0.2.10 the stored copy in `.storage/pillpilot.medicines_se` always won over the integration's bundled file. So if you'd ever clicked **Refresh medicine list now** in an earlier release, you stayed stuck on that cached list across HACS upgrades — the v0.2.9 jump from 216 to 7331 entries was invisible until you manually refreshed again. `MedicineDatabase.async_load` now compares `list_version` on the two and picks the newer one. Explicit URL refreshes ahead of the bundle still take precedence.
+**NPL ID now auto-fills in the HA Settings reconfigure flow.** The v0.2.10 fix only covered the panel's Add/Edit modal — when you reconfigured a medicine from **Settings → Devices & services → PillPilot**, the NPL ID field stayed empty even when the catalog had a match. Mirrors the existing ATC code auto-fill logic in both single-prescription and multi-prescription paths.
 
-**NPL ID auto-fills from the catalog.** When you pick a known medicine in the panel's Add/Edit modal, the NPL ID field now populates from the Läkemedelsverket export, the same way ATC code and active substance already do. Three spots that all had to be in sync: `_normalize_entry` preserves the field on load, `sanitize_for_ws` forwards it to the panel, and `_applyDrugNameAutoFill` writes it into the draft. Anything you typed yourself isn't overwritten.
+**Bundled list reload also triggers on content drift, not just version diff.** v0.2.10 added `npl_id` per entry without bumping `list_version`, so on upgrade `async_load` saw equal versions and stuck with the stored cache (which v0.2.9's normalizer had stripped of `npl_id`). The fix samples up to 500 entries from each side: if bundled has a field populated on more than 25% of entries while stored has it on less than 5%, that's a schema upgrade — bundled wins.
+
+## What's new
+
+**`pillpilot.backfill_from_catalog` service.** Catches up medicines configured before catalog auto-fill landed. One call walks every medicine you've added, looks each up by name in the catalog, and fills in any empty NPL ID and ATC code from the match. Anything you've typed yourself is preserved.
+
+Trigger it from the panel: the header now has a `⋮` menu next to the gear with a **Backfill empty fields from catalog** item. A toast confirms completion. Or call `pillpilot.backfill_from_catalog` from **Developer Tools → Actions** if you prefer. Either way, the log shows the count: `backfill_from_catalog: filled N medicine(s), skipped M`.
 
 ## Upgrading
 
-Replace the `pillpilot` directory in `custom_components/` with the contents of this zip and restart Home Assistant. HACS users: update normally.
-
-Anyone on the v0.2.9 bundled list (`2026.05.10-1`) and a stored copy from before will be flipped to the bundled list on first load after this upgrade. Existing medicines configured before the upgrade are unaffected.
+Replace the `pillpilot` directory in `custom_components/` with the contents of this zip and restart Home Assistant. HACS users: update normally. Existing medicines are unaffected — backfill is opt-in via the new service.

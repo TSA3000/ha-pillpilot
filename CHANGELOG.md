@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.11] — 2026-05-10
+
+Catalog auto-fill cleanup. Drop-in upgrade from 0.2.10.
+
+- **NPL ID auto-fills in the HA Settings reconfigure flow.** v0.2.10 wired the catalog → form auto-fill in the panel's Add/Edit modal but missed the same logic in `config_flow.py`. Both `validate_medicine_input` and `validate_medicine_input_multi` now compute `npl_final = user_npl or catalog_npl or None` the same way they already compute `atc_final`. User-entered NPL IDs are still never overwritten.
+- **Content-drift detection in `MedicineDatabase.async_load`.** Versions-only comparison missed the v0.2.9 → v0.2.10 case where the schema gained `npl_id` per entry but `list_version` stayed the same — anyone whose stored cache was written by v0.2.9's normalizer never got NPL IDs until they ran Refresh by hand. v0.2.11 samples up to 500 entries from each side and force-loads the bundled file when its entries have a populated field (`npl_id`, `atc_code`, `active_substance`) that the stored copy lacks across the board.
+- **New `pillpilot.backfill_from_catalog` service** with a **panel trigger**. The service walks every configured medicine, looks each up by name in the catalog, and fills any empty `npl_id` / `atc_code` from the match. Never overwrites user-entered values; skips `active_substance` and notes since notes is free-text. One call catches up medicines added before the auto-fill landed in v0.2.10. The panel's header now has a `⋮` menu next to the gear that runs the service directly — result toast on completion.
+
 ## [0.2.10] — 2026-05-10
 
 Two fixes from v0.2.9 testing. Drop-in upgrade from 0.2.9.

@@ -131,6 +131,7 @@ SERVICE_SKIP = "skip"
 SERVICE_SNOOZE = "snooze"
 SERVICE_UNMARK_TAKEN = "unmark_taken"
 SERVICE_REFRESH_MEDICINES_DATABASE = "refresh_medicines_database"
+SERVICE_BACKFILL_FROM_CATALOG = "backfill_from_catalog"
 
 # ---- medicines database (added v0.2.15) -----------------------------
 # The bundled Swedish medicine list (medicines_se.json) shipped with

@@ -14,13 +14,16 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
+    CONF_MED_ATC_CODE,
     CONF_MED_ID,
     CONF_MED_NAME,
+    CONF_MED_NPL_ID,
     CONF_MED_PRESCRIPTIONS,
     CONF_MEDICINES_DB_URL,
     CONF_PANEL_VISIBILITY,
     DOMAIN,
     PLATFORMS,
+    SERVICE_BACKFILL_FROM_CATALOG,
     SERVICE_MARK_TAKEN,
     SERVICE_REFRESH_MEDICINES_DATABASE,
     SERVICE_SKIP,
@@ -34,7 +37,12 @@ from .config_flow import (
     merge_v2_prescriptions_into_existing,
     validate_medicine_input_multi,
 )
-from .medicines import DEFAULT_MEDICINES_DB_URL, MedicineDatabase, sanitize_for_ws
+from .medicines import (
+    DEFAULT_MEDICINES_DB_URL,
+    MedicineDatabase,
+    lookup_by_name,
+    sanitize_for_ws,
+)
 from .panel import async_register_panel, async_unregister_panel
 from .schedule import migrate_v1_to_v2_schedule
 from .sources import build_sources
@@ -79,6 +87,9 @@ REFRESH_MEDICINES_DB_SCHEMA = vol.Schema(
         vol.Optional("url"): vol.All(cv.url, vol.Match(r"^https?://", msg="URL must use http or https scheme")),
     }
 )
+
+
+BACKFILL_FROM_CATALOG_SCHEMA = vol.Schema({})
 
 
 # ---------------------------------------------------------------------------
@@ -471,6 +482,80 @@ def _register_services(hass: HomeAssistant) -> None:
         else:
             _LOGGER.warning("Medicines list refresh failed: %s", msg)
 
+    async def handle_backfill_from_catalog(call: ServiceCall) -> None:
+        """Backfill ``npl_id`` and ``atc_code`` on existing medicines.
+
+        v0.2.11: catches up medicines added before v0.2.10's auto-fill
+        landed (or added via a code path that didn't auto-fill). Walks
+        every medicine subentry, looks each up by name in the catalog,
+        and fills in any empty ``npl_id`` / ``atc_code`` from the
+        match. Never overwrites a non-empty user-entered value.
+        ``active_substance`` and notes are skipped — notes is
+        free-text and may contain user content.
+
+        Admin-only: mutates entry data.
+        """
+        if call.context.user_id is not None:
+            user = await hass.auth.async_get_user(call.context.user_id)
+            if user is None or not user.is_admin:
+                raise Unauthorized(context=call.context)
+        medicine_db: MedicineDatabase | None = hass.data.get(DOMAIN, {}).get(
+            "medicine_db"
+        )
+        if medicine_db is None:
+            _LOGGER.warning(
+                "backfill_from_catalog called before integration setup"
+            )
+            return
+        catalog = medicine_db.medicines
+        if not catalog:
+            _LOGGER.warning(
+                "backfill_from_catalog: catalog is empty, nothing to match against"
+            )
+            return
+        total_filled = 0
+        total_skipped = 0
+        for entry_id in list(hass.data[DOMAIN].keys()):
+            cfg = hass.config_entries.async_get_entry(entry_id)
+            if cfg is None:
+                continue
+            for sub in list(cfg.subentries.values()):
+                if sub.subentry_type != SUBENTRY_TYPE_MEDICINE:
+                    continue
+                name = (sub.data.get(CONF_MED_NAME) or "").strip()
+                if not name:
+                    total_skipped += 1
+                    continue
+                hit = lookup_by_name(catalog, name)
+                if not hit:
+                    total_skipped += 1
+                    continue
+                user_npl = (sub.data.get(CONF_MED_NPL_ID) or "").strip()
+                user_atc = (sub.data.get(CONF_MED_ATC_CODE) or "").strip()
+                catalog_npl = (hit.get("npl_id") or "").strip()
+                catalog_atc = (hit.get("atc_code") or "").strip()
+                patch: dict[str, Any] = {}
+                if not user_npl and catalog_npl:
+                    patch[CONF_MED_NPL_ID] = catalog_npl
+                if not user_atc and catalog_atc:
+                    patch[CONF_MED_ATC_CODE] = catalog_atc
+                if not patch:
+                    continue
+                try:
+                    hass.config_entries.async_update_subentry(
+                        cfg, sub, data={**sub.data, **patch}
+                    )
+                    total_filled += 1
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception(
+                        "backfill_from_catalog: subentry %s update failed",
+                        sub.subentry_id,
+                    )
+        _LOGGER.info(
+            "backfill_from_catalog: filled %d medicine(s), skipped %d",
+            total_filled, total_skipped,
+        )
+
     hass.services.async_register(
         DOMAIN, SERVICE_MARK_TAKEN, handle_mark_taken, schema=MARK_TAKEN_SCHEMA
     )
@@ -491,6 +576,12 @@ def _register_services(hass: HomeAssistant) -> None:
         SERVICE_REFRESH_MEDICINES_DATABASE,
         handle_refresh_medicines_database,
         schema=REFRESH_MEDICINES_DB_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_BACKFILL_FROM_CATALOG,
+        handle_backfill_from_catalog,
+        schema=BACKFILL_FROM_CATALOG_SCHEMA,
     )
 
 

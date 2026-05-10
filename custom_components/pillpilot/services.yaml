@@ -127,3 +127,7 @@ refresh_medicines_database:
       example: "https://raw.githubusercontent.com/TSA3000/ha-pillpilot/main/custom_components/pillpilot/medicines_se.json"
       selector:
         text:
+
+backfill_from_catalog:
+  name: Backfill from catalog
+  description: Walk every configured medicine and fill any empty NPL ID and ATC code from the bundled catalog by matching on the medicine name. Never overwrites values you've already entered. Catches up medicines added before automatic catalog auto-fill landed.
