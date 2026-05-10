@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.8] — 2026-05-10
+
+Snooze UX. Drop-in upgrade from 0.2.7.
+
+- **Snooze button on every actionable row.** Due, missed, and upcoming slots now render Take / Snooze / Skip in the panel, matching the mobile notification's button set. Tapping Snooze calls `pillpilot.snooze` with `minutes=15` and the slot's `scheduled_for`.
+- **Snooze all due (15m)** and **Snooze all missed (15m)** in the per-person kebab menu. Iterates the matching slots and fires one snooze per slot. Disabled when there's nothing in that bucket.
+- **No new bus events or schema changes.** Same `pillpilot.snooze` service, same `pillpilot_dose_snoozed` event, same `DoseRecord` fields. Drop-in upgrade.
+
 ## [0.2.7] — 2026-05-10
 
 Snooze fix. Drop-in upgrade from 0.2.6.

@@ -222,6 +222,14 @@ const STYLES = `
     background: var(--secondary-text-color, #727272);
     color: #fff;
   }
+  .dose-action-btn.snooze {
+    border-color: var(--info-color, #03a9f4);
+    color: var(--info-color, #03a9f4);
+  }
+  .dose-action-btn.snooze:hover {
+    background: var(--info-color, #03a9f4);
+    color: #fff;
+  }
   .dose-status-label {
     font-size: 12px;
     color: var(--secondary-text-color, #727272);
@@ -1960,6 +1968,16 @@ class PillPilotPanel extends HTMLElement {
     this._hass.callService("pillpilot", "skip", data);
   }
 
+  // Default snooze duration matches the notification's "Snooze 15m"
+  // button so the row, the bulk actions, and the mobile_app payload
+  // all push doses out by the same amount.
+  _snooze(medicineId, scheduledAt, minutes = 15) {
+    if (!medicineId || !this._hass) return;
+    const data = { medicine_id: medicineId, minutes };
+    if (scheduledAt) data.scheduled_for = scheduledAt;
+    this._hass.callService("pillpilot", "snooze", data);
+  }
+
   // per-dose undo (hover on green Taken badge → button)
   // and per-person bulk undo (kebab menu → Undo last action).
   // Both call the new pillpilot.unmark_taken service backed by
@@ -2020,6 +2038,28 @@ class PillPilotPanel extends HTMLElement {
     if (!group) return;
     const targets = group.doses.filter((d) => d.status === STATE_MISSED);
     this._executeBulkForPerson(personKey, targets);
+  }
+
+  _snoozeAllDueForPerson(personKey) {
+    const group = this._findPersonGroup(personKey);
+    if (!group) return;
+    const targets = group.doses.filter((d) => d.status === STATE_DUE);
+    for (const d of targets) {
+      this._snooze(d.medicineId, d.scheduledAt);
+    }
+    this._lastSig = null;
+    this._render();
+  }
+
+  _snoozeAllMissedForPerson(personKey) {
+    const group = this._findPersonGroup(personKey);
+    if (!group) return;
+    const targets = group.doses.filter((d) => d.status === STATE_MISSED);
+    for (const d of targets) {
+      this._snooze(d.medicineId, d.scheduledAt);
+    }
+    this._lastSig = null;
+    this._render();
   }
 
   _undoLastForPerson(personKey) {
@@ -3511,6 +3551,8 @@ class PillPilotPanel extends HTMLElement {
               <button class="kebab-btn" data-action="toggle-kebab" data-person-key="${personIdAttr}" aria-label="More actions">⋮</button>
               <div class="kebab-menu" data-kebab-for="${personIdAttr}">
                 <button data-action="take-missed-person" data-person-key="${personIdAttr}" ${disableTakeMissed ? "disabled" : ""}>Take missed today</button>
+                <button data-action="snooze-due-person" data-person-key="${personIdAttr}" ${disableTakeDue ? "disabled" : ""}>Snooze all due (15m)</button>
+                <button data-action="snooze-missed-person" data-person-key="${personIdAttr}" ${disableTakeMissed ? "disabled" : ""}>Snooze all missed (15m)</button>
                 <button data-action="undo-person" data-person-key="${personIdAttr}" ${disableUndo ? "disabled" : ""}>Undo last action</button>
               </div>
             </div>
@@ -3592,6 +3634,7 @@ class PillPilotPanel extends HTMLElement {
       return `
         <div class="dose-actions">
           <button class="dose-action-btn take" data-action="take" data-medicine-id="${medId}" data-scheduled-at="${sched}">Take</button>
+          <button class="dose-action-btn snooze" data-action="snooze" data-medicine-id="${medId}" data-scheduled-at="${sched}">Snooze</button>
           <button class="dose-action-btn skip" data-action="skip" data-medicine-id="${medId}" data-scheduled-at="${sched}">Skip</button>
         </div>
       `;
@@ -3761,6 +3804,13 @@ class PillPilotPanel extends HTMLElement {
         this._skip(t.dataset.medicineId, t.dataset.scheduledAt);
       });
     });
+    root.querySelectorAll('[data-action="snooze"]').forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        const t = e.currentTarget;
+        this._snooze(t.dataset.medicineId, t.dataset.scheduledAt);
+      });
+    });
     // per-dose hover-undo button (visible only on hover over
     // the green Taken badge).
     root.querySelectorAll('[data-action="undo-dose"]').forEach((btn) => {
@@ -3800,6 +3850,24 @@ class PillPilotPanel extends HTMLElement {
         if (e.currentTarget.disabled) return;
         this._takeMissedForPerson(e.currentTarget.dataset.personKey);
         // Close the kebab menu after the action fires.
+        this._toggleKebab(e.currentTarget.dataset.personKey);
+      });
+    });
+    root.querySelectorAll('[data-action="snooze-due-person"]').forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.currentTarget.disabled) return;
+        this._snoozeAllDueForPerson(e.currentTarget.dataset.personKey);
+        this._toggleKebab(e.currentTarget.dataset.personKey);
+      });
+    });
+    root.querySelectorAll('[data-action="snooze-missed-person"]').forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.currentTarget.disabled) return;
+        this._snoozeAllMissedForPerson(e.currentTarget.dataset.personKey);
         this._toggleKebab(e.currentTarget.dataset.personKey);
       });
     });
