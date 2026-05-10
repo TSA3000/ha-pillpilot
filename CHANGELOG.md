@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.9] — 2026-05-10
+
+Medicine list rebuilt from Läkemedelsverket. Drop-in upgrade from 0.2.8.
+
+- **List source switched to Läkemedelsverket's open-data register** ([dataset 140_5467](https://www.dataportal.se/datasets/140_5467) — Sök läkemedelsfakta, distribution `Lakemedelsprodukter.xlsx`). 216 hand-curated entries → 7331. Covers every human medicine currently `Godkänd` or `Registrerad`; veterinary and deregistered products filtered at build time. Snapshot 2026-05-10. Each entry now carries `npl_id`, and `aliases` picks up former product names from the `Tidigare läkemedelsnamn` column.
+- **Build tool** at `tools/build_medicines_se.py`. Reads `Lakemedelsprodukter.xlsx` (also csv/tsv/xml/json), groups per-strength rows by name, preserves curated aliases on existing entries, bumps `list_version`. Not shipped in the integration zip.
+
 ## [0.2.8] — 2026-05-10
 
 Snooze UX. Drop-in upgrade from 0.2.7.

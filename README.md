@@ -156,13 +156,43 @@ custom_components/pillpilot/
 └── sources/
     ├── __init__.py      factory: build_sources() — returns [] currently
     └── base.py          MedicineSource protocol
+
+tools/                   not shipped in the integration zip
+└── build_medicines_se.py  rebuild medicines_se.json from Läkemedelsverket's open-data export
 ```
 
-## Contributing to the medicine list
+## Medicine list
 
-1. Fork the repo, edit `medicines_se.json`, bump the `list_version` field (we use `YYYY.MM.DD-N`).
-2. For each new entry: include the brand name as `name`, add common misspellings/generic name/alt brands as `aliases` (these power the fuzzy match in the dropdown), include the ATC code only if you're confident (verify against [Sök VARA](https://sokvara.ehalsomyndigheten.se) or [FASS](https://www.fass.se)), and use Swedish substance names where they differ from the brand.
-3. Open a PR. Once merged, existing users can pull the new entries via the integration's **Reconfigure → Refresh medicine list now** without waiting for a HACS release.
+The bundled `medicines_se.json` is compiled from [Läkemedelsverket's open-data register](https://www.dataportal.se/datasets/140_5467) — every human medicine in Sök läkemedelsfakta with status *Godkänd* or *Registrerad*. Veterinary, deregistered, and temporarily withdrawn products are filtered out. The dataset is updated nightly upstream and is free to use under Sweden's open-data law (öppna data-lagen, 2022:818).
+
+Each entry carries:
+
+- `name` — display name (brand or generic)
+- `active_substance` — `Verksamt ämne (förenklat)`
+- `atc_code` — WHO ATC code from the export
+- `npl_id` — first NPL-id seen for the name
+- `common_forms` — every `Form` value seen for the name, deduped
+- `aliases` — former product names from `Tidigare läkemedelsnamn`, plus any curated misspellings/generics added in PRs
+
+### Rebuilding the list
+
+`tools/build_medicines_se.py` regenerates the JSON from a fresh export. Not shipped in the integration zip — it's a maintainer tool.
+
+1. Download the latest `Lakemedelsprodukter.xlsx` distribution from [dataset 140_5467](https://www.dataportal.se/datasets/140_5467).
+2. Run:
+   ```
+   pip install openpyxl
+   python tools/build_medicines_se.py \
+       --input ~/Downloads/Lakemedelsprodukter.xlsx \
+       --output custom_components/pillpilot/medicines_se.json
+   ```
+3. The script groups the per-strength export rows by `Namn`, applies the human + active-status filters, preserves any curated aliases already on existing entries (curated wins on conflict), and bumps `list_version` to today's date with an `-N` suffix. Use `--dry-run` to print stats without writing.
+
+The script also accepts `.csv`, `.tsv`, `.xml`, and `.json` inputs — the column-detection logic uses a lookup table of common Swedish/English header names, so a renamed column in a future export usually doesn't break the build.
+
+### Contributing curated aliases
+
+The export covers names but doesn't carry common misspellings or alternate generic terms users might search for. PRs adding `aliases` for any entry are welcome — they're preserved across rebuilds. Open a PR editing `medicines_se.json` directly; once merged, existing users can pull the new aliases via **Reconfigure → Refresh medicine list now** without waiting for a HACS release.
 
 ## Known limitations
 
