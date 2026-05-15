@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.12] — 2026-05-16
+
+Catalog schema v2 — per-medicine variants. Drop-in upgrade from 0.2.11.
+
+- **`medicines_se.json` is now schema v2.** Each medicine carries a `variants` array (one entry per distinct strength/form combo) instead of the v1 single top-level `npl_id` + flat `common_forms` list. Concerta now resolves to four variants (18/27/36/54 mg Depottablett), Trimbow to three (combo strengths), Eliquis to six (0,15 mg through 5 mg across granules/dospåse/tablets), etc. Parallel imports of the same strength/form are deduped — first NPL-id wins. 7331 medicines, 14477 variants total.
+- **Loader handles v1 and v2.** `_normalize_entry` reads `variants` when present and back-derives top-level `npl_id` (first variant) and `common_forms` (deduped variant forms) so every existing code path keeps working unchanged. v1 entries (no `variants` array) load exactly as before.
+- **Content-drift detection extended.** `_bundled_has_content_drift` now samples the `variants` field alongside the scalars. The v2 bundle force-loads over a v1 stored cache even though `list_version` stays at `2026.05.10-1` — no manual Refresh needed after upgrade.
+- **`sanitize_for_ws` forwards variants to the panel.** The websocket payload from `pillpilot/get_medicines_db` gains a `variants` list on each entry.
+- **Modal shows available strengths.** Picking a known medicine in the Add/Edit modal surfaces a read-only **Available strengths (from catalog)** section listing every variant as a chip (`5 mg — Filmdragerad tablett`, `10 mg — Filmdragerad tablett`, …). Form unchanged — strength is still free-text in this release. The variant-driven dropdown lands in v0.2.13.
+- **Build tool updated** at `tools/build_medicines_se.py` to extract `Styrka`, `Form`, and `NPL-id` per row and emit them as the variants array. Stats line now reports `dedup_parallel_imports`. Still maintainer-only — not shipped in the integration zip.
+- **README schema documentation refreshed** to describe the variants shape.
+
 ## [0.2.11] — 2026-05-10
 
 Catalog auto-fill cleanup. Drop-in upgrade from 0.2.10.

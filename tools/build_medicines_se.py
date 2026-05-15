@@ -33,9 +33,18 @@ Source column                         medicines_se.json
   Namn                              → name (group key)
   Verksamt ämne (förenklat)         → active_substance
   ATC-kod                           → atc_code
-  Form                              → common_forms[] (deduped per name)
-  NPL-id                            → npl_id (one per name; first wins)
-  Tidigare läkemedelsnamn           → aliases[] (deduped, ≠ name)
+  Tidigare läkemedelsnamn           → aliases[] (split on commas; ≠ name)
+  Styrka, Form, NPL-id              → variants[] (one per strength/form)
+
+Variants array
+--------------
+Each medicine has a ``variants`` list — one entry per distinct
+(strength, form) pair. ``Concerta`` has 4 variants (18/27/36/54 mg
+Depottablett); ``Alvedon`` has ~11. The variant carries the precise
+``npl_id``, ``strength``, and ``form`` strings, enabling per-variant
+linking to Fass / Läkemedelsverket and smart strength/form pickers
+in the panel. Parallel imports (multiple NPLs for the same
+strength+form) are deduped — first NPL wins.
 
 Existing curated aliases on a medicine that's already in the JSON are
 preserved and merged with any newly-discovered Tidigare-läkemedelsnamn
@@ -245,7 +254,13 @@ def _row_get(row: dict[str, Any], col_map: dict[str, str | None],
 def group_and_normalize(
     raw_rows: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """Filter raw rows and group by Namn into one entry per medicine."""
+    """Filter raw rows and group by Namn into one entry per medicine.
+
+    Each entry has a ``variants`` list of ``{npl_id, strength, form}`` —
+    one per distinct (strength, form) for the brand. Parallel imports
+    (multiple NPLs for the same user-facing strength+form combo) are
+    deduped: the first NPL wins.
+    """
     if not raw_rows:
         return [], {}
     headers = list(raw_rows[0].keys())
@@ -262,12 +277,16 @@ def group_and_normalize(
         "skipped_status": 0,
         "skipped_vet": 0,
         "kept_rows": 0,
+        "dedup_parallel_imports": 0,
     }
 
     grouped: dict[str, dict[str, Any]] = defaultdict(
         lambda: {
-            "forms": set(), "aliases": set(),
-            "atc": "", "substance": "", "npl": "", "name": "",
+            "name": "", "atc": "", "substance": "",
+            "aliases": set(),
+            # Variant key (strength_norm, form_norm) → variant dict.
+            # Dedupes parallel imports while preserving the first NPL.
+            "variants": {},
         }
     )
 
@@ -290,27 +309,37 @@ def group_and_normalize(
         g = grouped[key]
         if not g["name"]:
             g["name"] = name
-        for f in _split_forms(_row_get(row, cmap, "common_forms")):
-            g["forms"].add(f)
         if not g["substance"]:
             g["substance"] = _row_get(row, cmap, "active_substance")
         if not g["atc"]:
             g["atc"] = _row_get(row, cmap, "atc_code")
-        if not g["npl"]:
-            g["npl"] = _row_get(row, cmap, "npl_id")
         prev_raw = _row_get(row, cmap, "previous_name")
         if prev_raw:
-            # Tidigare läkemedelsnamn occasionally contains a
-            # comma-separated list of former names (e.g. "Bamyl, Paxodin,
-            # Emotpin") in a single cell. Split, normalize, drop dupes
-            # and any value equal to the current name.
             for prev in re.split(r"[,;]\s*", prev_raw):
                 prev = prev.strip()
-                if not prev:
-                    continue
-                if _norm(prev) == key:
+                if not prev or _norm(prev) == key:
                     continue
                 g["aliases"].add(prev)
+
+        strength = _row_get(row, cmap, "common_forms")  # placeholder
+        # Variant key is (normalized strength, normalized form) so
+        # parallel imports collapse. NPL of the first row wins.
+        strength = _row_get_strength(row, cmap)
+        form = _row_get(row, cmap, "common_forms")
+        npl = _row_get(row, cmap, "npl_id")
+        v_key = (_norm(strength), _norm(form))
+        if v_key in g["variants"]:
+            stats["dedup_parallel_imports"] += 1
+            continue
+        variant: dict[str, str] = {}
+        if npl:
+            variant["npl_id"] = npl
+        if strength:
+            variant["strength"] = strength
+        if form:
+            variant["form"] = form
+        if variant:
+            g["variants"][v_key] = variant
 
     out: list[dict[str, Any]] = []
     for g in grouped.values():
@@ -322,14 +351,75 @@ def group_and_normalize(
             rec["active_substance"] = g["substance"]
         if g["atc"]:
             rec["atc_code"] = g["atc"]
-        if g["npl"]:
-            rec["npl_id"] = g["npl"]
-        if g["forms"]:
-            rec["common_forms"] = sorted(g["forms"], key=str.lower)
+        # Sort variants by (strength, form) for stable diff
+        rec["variants"] = sorted(
+            g["variants"].values(),
+            key=lambda v: (
+                _strength_sort_key(v.get("strength", "")),
+                v.get("form", "").lower(),
+            ),
+        )
         out.append(rec)
     out.sort(key=lambda m: _norm(m["name"]))
     stats["unique_medicines"] = len(out)
+    stats["total_variants"] = sum(len(m["variants"]) for m in out)
     return out, stats
+
+
+def _row_get_strength(row: dict[str, Any], cmap: dict[str, str | None]) -> str:
+    """Read the Styrka column. Listed separately because there's no
+    schema-level 'strength' field — Läkemedelsverket exports use 'Styrka'.
+    """
+    for col_name in row:
+        if _norm(col_name) == "styrka":
+            v = row[col_name]
+            return "" if v is None else str(v).strip()
+    return ""
+
+
+def _strength_sort_key(s: str) -> tuple[float, str]:
+    """Sort strengths numerically when possible, lexicographically otherwise.
+
+    '18 mg' sorts before '54 mg' (not by string '18' vs '5').
+    Compound strengths like '10 mg/g + 0,25 mg/g' fall back to lex sort.
+    """
+    if not s:
+        return (float("inf"), "")
+    m = re.match(r"^\s*([\d.,]+)", s)
+    if m:
+        try:
+            return (float(m.group(1).replace(",", ".")), s.lower())
+        except ValueError:
+            pass
+    return (float("inf"), s.lower())
+
+
+def _legacy_to_variants(m: dict[str, Any]) -> dict[str, Any]:
+    """Promote a pre-variants curated entry to the variants[] shape.
+
+    Older medicines_se.json had one ``npl_id`` and one ``common_forms``
+    list per medicine. Map that to a variants array so consumers see a
+    uniform shape — one variant per old form, sharing the legacy NPL
+    if present, no strength (the legacy schema didn't track strengths).
+    """
+    out = {k: v for k, v in m.items()
+           if k not in ("npl_id", "common_forms")}
+    if "variants" in out:
+        return out
+    variants: list[dict[str, str]] = []
+    forms = m.get("common_forms") or []
+    legacy_npl = m.get("npl_id")
+    if forms:
+        for f in forms:
+            v: dict[str, str] = {}
+            if legacy_npl:
+                v["npl_id"] = legacy_npl
+            v["form"] = f
+            variants.append(v)
+    elif legacy_npl:
+        variants.append({"npl_id": legacy_npl})
+    out["variants"] = variants
+    return out
 
 
 def merge(
@@ -338,19 +428,20 @@ def merge(
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Merge new_records into existing['medicines'], preserving aliases.
 
-    Match key: NPL ID if both sides have one, else lowercased name.
-    Curated aliases survive: they're unioned with new aliases from the
-    source (Tidigare läkemedelsnamn), curated wins on conflict.
+    Match key is lowercased name. (NPL lookup is no longer 1:1 in the
+    variants-aware schema, so the name is the stable join key.)
+    Curated aliases survive: unioned with new aliases from the source
+    (Tidigare läkemedelsnamn), curated wins on conflict.
 
     Existing entries that DON'T match anything in the source are
     preserved verbatim — never silently dropped. They may be valid
     medicines that fell out of the dataset (deregistered, renamed,
-    veterinary, misspelled) and the user curated them deliberately.
+    misspelled) and the user curated them deliberately. Legacy
+    single-npl_id shapes get promoted to variants[] on the way through.
     """
     existing_meds = existing.get("medicines") or []
-    by_npl = {m["npl_id"]: m for m in existing_meds if m.get("npl_id")}
     by_name = {_norm(m["name"]): m for m in existing_meds}
-    matched_existing: set[int] = set()  # ids of matched existing entries
+    matched_existing: set[int] = set()
 
     merged: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
@@ -360,9 +451,8 @@ def merge(
     }
 
     for rec in new_records:
-        npl = rec.get("npl_id")
         name_key = _norm(rec["name"])
-        match = (by_npl.get(npl) if npl else None) or by_name.get(name_key)
+        match = by_name.get(name_key)
 
         if match:
             matched_existing.add(id(match))
@@ -373,13 +463,18 @@ def merge(
                 if _norm(a) not in seen:
                     curated.append(a)
                     seen.add(_norm(a))
+            name_norm = _norm(rec["name"])
+            curated = [a for a in curated if _norm(a) != name_norm]
             curated.sort(key=str.lower)
             if match.get("aliases"):
                 s["preserved_aliases"] += 1
             if len(curated) > len(match.get("aliases") or []):
                 s["merged_aliases"] += 1
             rec["aliases"] = curated
-            old_compare = {k: v for k, v in match.items() if k != "aliases"}
+            # Compare ignoring aliases (and ignoring shape differences
+            # for the legacy → variants migration).
+            old_compare = {k: v for k, v in _legacy_to_variants(match).items()
+                           if k != "aliases"}
             new_compare = {k: v for k, v in rec.items() if k != "aliases"}
             if old_compare != new_compare:
                 s["updated"] += 1
@@ -388,18 +483,21 @@ def merge(
         else:
             s["added"] += 1
 
-        key = npl or name_key
-        if key in seen_keys:
+        if name_key in seen_keys:
             continue
-        seen_keys.add(key)
+        seen_keys.add(name_key)
         merged.append(rec)
 
-    # Preserve curated entries that didn't appear in the source.
     for m in existing_meds:
         if id(m) in matched_existing:
             continue
-        # Defensive copy so a stale reference doesn't mutate.
-        merged.append(dict(m))
+        copy = _legacy_to_variants(dict(m))
+        if copy.get("aliases"):
+            name_norm = _norm(copy["name"])
+            copy["aliases"] = [
+                a for a in copy["aliases"] if _norm(a) != name_norm
+            ]
+        merged.append(copy)
         s["kept_orphans"] += 1
 
     merged.sort(key=lambda x: _norm(x["name"]))
@@ -447,9 +545,13 @@ def main() -> int:
         f"{gstats['total_rows']} total "
         f"(skipped: {gstats['skipped_status']} non-current status, "
         f"{gstats['skipped_vet']} veterinary, "
-        f"{gstats['skipped_no_name']} missing name)"
+        f"{gstats['skipped_no_name']} missing name, "
+        f"{gstats['dedup_parallel_imports']} parallel-import dupes folded)"
     )
-    print(f"  → {gstats['unique_medicines']} unique medicines after dedupe")
+    print(
+        f"  → {gstats['unique_medicines']} unique medicines, "
+        f"{gstats['total_variants']} total variants"
+    )
 
     merged, mstats = merge(existing, records)
     print(
@@ -474,9 +576,27 @@ def main() -> int:
         return 0
 
     out = dict(existing)
+    out["schema_version"] = 2  # variants[] replaces npl_id+common_forms
     out["list_version"] = new_version
     out["updated"] = date.today().isoformat()
     out["medicines"] = merged
+    out["fields"] = {
+        "name": "Display name (usually brand). Required.",
+        "aliases": (
+            "Alternative spellings, generic names, common misspellings, "
+            "former product names. Searched alongside name in the dropdown."
+        ),
+        "active_substance": "Active substance (Swedish or Latin name).",
+        "atc_code": (
+            "WHO ATC code, where confidently known. Empty string if "
+            "uncertain."
+        ),
+        "variants": (
+            "List of {npl_id, strength, form} — one per distinct "
+            "strength+form combination. Enables per-variant deep-linking "
+            "to Fass / Läkemedelsverket and strength/form picker UI."
+        ),
+    }
     out["notice"] = (
         "Compiled from Läkemedelsverket's open-data register "
         "(Sök läkemedelsfakta, Sveriges dataportal dataset 140_5467) "

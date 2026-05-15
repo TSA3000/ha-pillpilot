@@ -1,19 +1,19 @@
-# v0.2.11
+# v0.2.12
 
-> Catalog auto-fill cleanup. Drop-in upgrade from 0.2.10.
-
-## What's fixed
-
-**NPL ID now auto-fills in the HA Settings reconfigure flow.** The v0.2.10 fix only covered the panel's Add/Edit modal — when you reconfigured a medicine from **Settings → Devices & services → PillPilot**, the NPL ID field stayed empty even when the catalog had a match. Mirrors the existing ATC code auto-fill logic in both single-prescription and multi-prescription paths.
-
-**Bundled list reload also triggers on content drift, not just version diff.** v0.2.10 added `npl_id` per entry without bumping `list_version`, so on upgrade `async_load` saw equal versions and stuck with the stored cache (which v0.2.9's normalizer had stripped of `npl_id`). The fix samples up to 500 entries from each side: if bundled has a field populated on more than 25% of entries while stored has it on less than 5%, that's a schema upgrade — bundled wins.
+> Catalog schema v2 — per-medicine variants. Drop-in upgrade from 0.2.11.
 
 ## What's new
 
-**`pillpilot.backfill_from_catalog` service.** Catches up medicines configured before catalog auto-fill landed. One call walks every medicine you've added, looks each up by name in the catalog, and fills in any empty NPL ID and ATC code from the match. Anything you've typed yourself is preserved.
+The bundled `medicines_se.json` ships in schema v2. Each medicine now carries a `variants` array — one entry per distinct strength/form combo. Concerta resolves to four variants (18/27/36/54 mg Depottablett), Trimbow to three combo strengths, Eliquis to six. 7331 medicines, 14477 variants.
 
-Trigger it from the panel: the header now has a `⋮` menu next to the gear with a **Backfill empty fields from catalog** item. A toast confirms completion. Or call `pillpilot.backfill_from_catalog` from **Developer Tools → Actions** if you prefer. Either way, the log shows the count: `backfill_from_catalog: filled N medicine(s), skipped M`.
+When you pick a known medicine in the Add/Edit modal, a new read-only **Available strengths (from catalog)** section appears between the codes and prescriptions. It lists every variant as a chip: `5 mg — Filmdragerad tablett`, `10 mg — Filmdragerad tablett`, etc. The form itself is unchanged — strength is still free-text in this release.
+
+## What's not changed yet
+
+This release is the data plumbing only. The strength input is still a free-text number with the legacy mg unit. The variant-driven dropdown that replaces it lands in v0.2.13 along with the prescription-level data model migration.
 
 ## Upgrading
 
-Replace the `pillpilot` directory in `custom_components/` with the contents of this zip and restart Home Assistant. HACS users: update normally. Existing medicines are unaffected — backfill is opt-in via the new service.
+Replace the `pillpilot` directory in `custom_components/` with the contents of this zip and restart Home Assistant. HACS users: update normally. Existing prescriptions are unaffected; the loader back-derives `npl_id` and `common_forms` from the new variants for any code path still reading the legacy fields.
+
+Stored medicine caches written by v0.2.11 (schema v1) auto-upgrade on first load — `_bundled_has_content_drift` now samples the variants field and force-loads the v2 bundle even though `list_version` stayed at `2026.05.10-1`.

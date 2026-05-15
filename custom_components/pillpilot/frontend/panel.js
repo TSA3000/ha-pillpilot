@@ -839,6 +839,25 @@ const STYLES = `
     font-size: 12px;
     color: var(--error-color, #f44336);
   }
+  /* v0.2.12: catalog variants hint inside the Add/Edit medicine
+     modal. Read-only — shows the strength/form combos
+     Läkemedelsverket has for the picked medicine so the user can
+     pick a real value when typing the free-text Strength field. */
+  .catalog-variants-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+  .catalog-variants-list li {
+    font-size: 13px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    background: var(--secondary-background-color, rgba(127,127,127,0.12));
+    color: var(--primary-text-color, inherit);
+  }
   /* v0.2.0-beta3.6 weekday chip selector + presets. Replaces the
      beta3 .day-checkboxes UI — same data model (draft.daysOfWeek
      Set of "0".."6"), better UX (one-tap presets for the common
@@ -2812,6 +2831,35 @@ class PillPilotPanel extends HTMLElement {
       )
       .join("");
 
+    // v0.2.12: catalog variants hint. When the typed name matches a
+    // known medicine, surface the available strength/form combinations
+    // from the bundled catalog. Read-only — the form's strength input
+    // is still free-text in this release.
+    const catalogHit = this._lookupMedNameOrAlias(draft.drug.name);
+    const catalogVariants =
+      catalogHit && Array.isArray(catalogHit.variants)
+        ? catalogHit.variants.filter(
+            (v) => (v.strength || "").trim() || (v.form || "").trim()
+          )
+        : [];
+    const variantsHtml = catalogVariants.length
+      ? `
+      <div class="form-section catalog-variants">
+        <h3 class="form-section-title">Available strengths (from catalog)</h3>
+        <ul class="catalog-variants-list">
+          ${catalogVariants
+            .map((v) => {
+              const s = (v.strength || "").trim();
+              const f = (v.form || "").trim();
+              const text = s && f ? `${s} — ${f}` : s || f;
+              return `<li>${escapeHtml(text)}</li>`;
+            })
+            .join("")}
+        </ul>
+      </div>
+      `
+      : "";
+
     return `
       <div class="form-section">
         <h3 class="form-section-title">Identity</h3>
@@ -2852,6 +2900,8 @@ class PillPilotPanel extends HTMLElement {
           </label>
         </div>
       </div>
+
+      ${variantsHtml}
 
       <div class="form-section">
         <div class="form-section-titlerow">

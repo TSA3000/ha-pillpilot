@@ -62,13 +62,35 @@ DEFAULT_MEDICINES_DB_URL = (
 )
 
 
+def _normalize_variant(raw: Any) -> dict[str, str] | None:
+    """Coerce one variant dict. Drops entries with no usable signal."""
+    if not isinstance(raw, dict):
+        return None
+    npl_id = str(raw.get("npl_id") or "").strip()
+    strength = str(raw.get("strength") or "").strip()
+    form = str(raw.get("form") or "").strip()
+    if not (npl_id or strength or form):
+        return None
+    return {"npl_id": npl_id, "strength": strength, "form": form}
+
+
 def _normalize_entry(raw: dict[str, Any]) -> dict[str, Any] | None:
     """Defensive parse of a single medicine entry.
 
-    Returns ``None`` for entries without a usable name. Other fields are
-    coerced to safe defaults — never raises on missing or wrong-typed
-    fields. The bundled list is well-formed; this defensiveness is for
-    user-supplied lists fetched from the configured URL.
+    Returns ``None`` for entries without a usable name. Other fields
+    are coerced to safe defaults — never raises on missing or
+    wrong-typed fields. The bundled list is well-formed; this
+    defensiveness is for user-supplied lists fetched from the
+    configured URL.
+
+    v0.2.12: accepts schema v2 entries that carry a ``variants``
+    list of ``{npl_id, strength, form}``. ``npl_id`` and
+    ``common_forms`` are back-derived from the variants for legacy
+    code paths that read those fields directly (top-level
+    ``npl_id`` becomes the first variant's NPL; ``common_forms``
+    becomes the deduped list of variant forms). Schema v1 entries
+    with top-level ``npl_id`` / ``common_forms`` continue to work
+    unchanged.
     """
     name = (raw.get("name") or "").strip()
     if not name:
@@ -76,16 +98,42 @@ def _normalize_entry(raw: dict[str, Any]) -> dict[str, Any] | None:
     aliases_raw = raw.get("aliases") or []
     if not isinstance(aliases_raw, list):
         aliases_raw = []
+
+    variants_raw = raw.get("variants") or []
+    if not isinstance(variants_raw, list):
+        variants_raw = []
+    variants: list[dict[str, str]] = []
+    for v in variants_raw:
+        norm = _normalize_variant(v)
+        if norm:
+            variants.append(norm)
+
+    # Top-level npl_id and common_forms (schema v1 shape) take
+    # precedence when present, otherwise derive from variants.
+    top_npl = str(raw.get("npl_id") or "").strip()
+    if not top_npl and variants:
+        top_npl = variants[0]["npl_id"]
+
     forms_raw = raw.get("common_forms") or []
     if not isinstance(forms_raw, list):
         forms_raw = []
+    common_forms = [str(f).strip() for f in forms_raw if str(f).strip()]
+    if not common_forms and variants:
+        seen: set[str] = set()
+        for v in variants:
+            f = v["form"]
+            if f and f not in seen:
+                seen.add(f)
+                common_forms.append(f)
+
     return {
         "name": name,
         "aliases": [str(a).strip() for a in aliases_raw if str(a).strip()],
         "active_substance": str(raw.get("active_substance") or "").strip(),
         "atc_code": str(raw.get("atc_code") or "").strip(),
-        "npl_id": str(raw.get("npl_id") or "").strip(),
-        "common_forms": [str(f).strip() for f in forms_raw if str(f).strip()],
+        "npl_id": top_npl,
+        "common_forms": common_forms,
+        "variants": variants,
     }
 
 
@@ -126,6 +174,10 @@ def _bundled_has_content_drift(
     >25% of entries while stored has it on <5%: a strong signal
     that the stored copy was written by an older normalizer
     that stripped the field.
+
+    v0.2.12: ``variants`` added to the sampled fields so
+    schema v2 catalogs (per-medicine variants array) force-load
+    over stored v1 caches even when the version stamp matches.
     """
     if not bundled_data or not isinstance(stored, dict):
         return False
@@ -134,15 +186,16 @@ def _bundled_has_content_drift(
     if not bundled_meds or not stored_meds:
         return False
     sample = min(500, len(bundled_meds), len(stored_meds))
-    for field in ("npl_id", "atc_code", "active_substance"):
-        b_pop = sum(
-            1 for m in bundled_meds[:sample]
-            if isinstance(m.get(field), str) and m[field].strip()
-        )
-        s_pop = sum(
-            1 for m in stored_meds[:sample]
-            if isinstance(m.get(field), str) and m[field].strip()
-        )
+
+    def populated(med: Any, field: str) -> bool:
+        v = med.get(field) if isinstance(med, dict) else None
+        if field == "variants":
+            return isinstance(v, list) and len(v) > 0
+        return isinstance(v, str) and bool(v.strip())
+
+    for field in ("variants", "npl_id", "atc_code", "active_substance"):
+        b_pop = sum(1 for m in bundled_meds[:sample] if populated(m, field))
+        s_pop = sum(1 for m in stored_meds[:sample] if populated(m, field))
         if b_pop > sample * 0.25 and s_pop < sample * 0.05:
             return True
     return False
@@ -410,13 +463,15 @@ def sanitize_for_ws(
     """Project the medicines list down to the fields the panel needs.
 
     The panel's autocomplete/auto-fill needs ``name``, ``aliases``,
-    ``active_substance``, ``atc_code`` and (since v0.2.10) ``npl_id``.
-    The bundled list also carries ``common_forms``, vendor metadata,
-    and pre-list comments — all irrelevant on the wire and worth not
-    shipping over the websocket on every panel load.
+    ``active_substance``, ``atc_code``, ``npl_id`` (since v0.2.10),
+    and ``variants`` (since v0.2.12). The bundled list also carries
+    ``common_forms``, vendor metadata, and pre-list comments — all
+    irrelevant on the wire and worth not shipping over the websocket
+    on every panel load.
 
     Nameless entries are dropped; missing optional fields are emitted
-    as empty strings so the panel can rely on the shape.
+    as empty strings or empty lists so the panel can rely on the
+    shape.
     """
     out: list[dict[str, Any]] = []
     for med in medicines:
@@ -428,11 +483,23 @@ def sanitize_for_ws(
             a.strip() for a in aliases_raw
             if isinstance(a, str) and a.strip()
         ]
+        variants_raw = med.get("variants") or []
+        variants: list[dict[str, str]] = []
+        if isinstance(variants_raw, list):
+            for v in variants_raw:
+                if not isinstance(v, dict):
+                    continue
+                variants.append({
+                    "npl_id": (v.get("npl_id") or "").strip(),
+                    "strength": (v.get("strength") or "").strip(),
+                    "form": (v.get("form") or "").strip(),
+                })
         out.append({
             "name": name,
             "aliases": aliases,
             "active_substance": (med.get("active_substance") or "").strip(),
             "atc_code": (med.get("atc_code") or "").strip(),
             "npl_id": (med.get("npl_id") or "").strip(),
+            "variants": variants,
         })
     return out

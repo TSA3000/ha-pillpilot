@@ -170,8 +170,7 @@ Each entry carries:
 - `name` — display name (brand or generic)
 - `active_substance` — `Verksamt ämne (förenklat)`
 - `atc_code` — WHO ATC code from the export
-- `npl_id` — first NPL-id seen for the name
-- `common_forms` — every `Form` value seen for the name, deduped
+- `variants` — one entry per distinct (strength, form) the medicine is sold in. Each variant carries `npl_id`, `strength` (e.g. `"5 mg"`, `"0,15 mg"`, `"100 E/ml"`, `"87 mikrogram/5 mikrogram/9 mikrogram"`), and `form` (e.g. `"Filmdragerad tablett"`, `"Depottablett"`, `"Injektionsvätska, lösning"`). Parallel imports of the same strength/form combo are deduped — first NPL-id wins.
 - `aliases` — former product names from `Tidigare läkemedelsnamn`, plus any curated misspellings/generics added in PRs
 
 ### Rebuilding the list
