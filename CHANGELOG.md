@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.15] — 2026-05-16
+
+Panel responsiveness pass. Drop-in upgrade from 0.2.14.
+
+- **Bulk actions render once, not N+1 times.** Pre-v0.2.15 every single-dose helper called `_render()` after setting its optimistic override; bulk handlers then did their own final `_render()` on top. For Take all on 10 doses that's 11 `innerHTML` rewrites per click. v0.2.15 wraps each bulk loop in a `_bulkInProgress` flag — single-dose helpers skip their inline render while the flag is on, the bulk handler renders once at the end.
+- **Optimistic overrides have a 60s TTL.** If a service call silently fails on the backend, the optimistic badge no longer lies forever. `_flattenTodayDoses` now also prunes any override older than 60s whose real status hasn't caught up, letting the actual state win.
+- **`_getMedicines` cached per `hass.states` reference.** `_signature`, `_renderFull`, `_findPersonGroup` and the modal datalist refresh all hit this helper within the same render cycle. The cache key invalidates correctly because HA replaces the states object on every entity change. Cuts the per-render entity-table walk from 3-4 passes to 1 on instances with many non-PillPilot entities.
+
 ## [0.2.14] — 2026-05-16
 
 Optimistic UI for dose actions. Drop-in upgrade from 0.2.13.

@@ -1470,12 +1470,22 @@ class PillPilotPanel extends HTMLElement {
 
   _getMedicines() {
     if (!this._hass || !this._hass.states) return [];
-    return Object.values(this._hass.states).filter(
+    // v0.2.15: cache per hass.states reference. HA replaces the
+    // states object on every entity change, so the reference
+    // check is a correct invalidator — and across a single render
+    // cycle (`_signature`, `_renderFull`, `_findPersonGroup`) we
+    // walk the entity table once instead of three or four times.
+    if (this._cachedMedicinesFor === this._hass.states) {
+      return this._cachedMedicines;
+    }
+    this._cachedMedicines = Object.values(this._hass.states).filter(
       (s) =>
         s.entity_id.startsWith("sensor.") &&
         s.attributes &&
         s.attributes.medicine_id !== undefined
     );
+    this._cachedMedicinesFor = this._hass.states;
+    return this._cachedMedicines;
   }
 
   // --- medicines DB cache (drug-name autocomplete) ----------------------
@@ -1671,6 +1681,7 @@ class PillPilotPanel extends HTMLElement {
   _flattenTodayDoses(meds) {
     const out = [];
     const ov = this._optimisticOverrides;
+    const now = Date.now();
     for (const med of meds) {
       const a = med.attributes;
       const name = a.medicine_name || a.friendly_name || med.entity_id;
@@ -1687,14 +1698,23 @@ class PillPilotPanel extends HTMLElement {
           // no waiting for the WS round-trip — and the override
           // disappears as soon as the backend's view of the slot
           // matches.
+          // v0.2.15: TTL prune. If the override is older than 60s
+          // and the real state still hasn't caught up, the backend
+          // probably dropped the call silently — let the real
+          // status win so the badge stops lying.
           const override = ov.get(key);
-          if (override && slot.status === override.status) {
-            ov.delete(key);
+          if (override) {
+            if (slot.status === override.status) {
+              ov.delete(key);
+            } else if (override.ts && now - override.ts > 60000) {
+              ov.delete(key);
+            }
           }
-          const effective = (override && slot.status !== override.status)
-            ? { ...slot, status: override.status,
-                action_at: override.actionAt || slot.action_at,
-                snoozed_until: override.snoozedUntil || slot.snoozed_until }
+          const effOverride = ov.get(key);
+          const effective = (effOverride && slot.status !== effOverride.status)
+            ? { ...slot, status: effOverride.status,
+                action_at: effOverride.actionAt || slot.action_at,
+                snoozed_until: effOverride.snoozedUntil || slot.snoozed_until }
             : slot;
           out.push({
             scheduledAt: effective.scheduled_at,
@@ -2012,12 +2032,16 @@ class PillPilotPanel extends HTMLElement {
       // v0.2.14: optimistic — paint the slot taken before the WS
       // round-trip completes. _flattenTodayDoses overlays this onto
       // the slot data until the real state catches up.
+      // v0.2.15: ts for TTL; the override drops on its own after
+      // 60s if real state never catches up (silent backend failure).
       this._optimisticOverrides.set(
         `${medicineId}::${scheduledAt}`,
-        { status: STATE_TAKEN, actionAt: new Date().toISOString() }
+        { status: STATE_TAKEN, actionAt: new Date().toISOString(), ts: Date.now() }
       );
-      this._lastSig = null;
-      this._render();
+      if (!this._bulkInProgress) {
+        this._lastSig = null;
+        this._render();
+      }
     }
     const data = { medicine_id: medicineId };
     if (scheduledAt) data.scheduled_for = scheduledAt;
@@ -2029,10 +2053,12 @@ class PillPilotPanel extends HTMLElement {
     if (scheduledAt) {
       this._optimisticOverrides.set(
         `${medicineId}::${scheduledAt}`,
-        { status: STATE_SKIPPED, actionAt: new Date().toISOString() }
+        { status: STATE_SKIPPED, actionAt: new Date().toISOString(), ts: Date.now() }
       );
-      this._lastSig = null;
-      this._render();
+      if (!this._bulkInProgress) {
+        this._lastSig = null;
+        this._render();
+      }
     }
     const data = { medicine_id: medicineId };
     if (scheduledAt) data.scheduled_for = scheduledAt;
@@ -2048,10 +2074,12 @@ class PillPilotPanel extends HTMLElement {
       const snoozedUntil = new Date(Date.now() + minutes * 60 * 1000).toISOString();
       this._optimisticOverrides.set(
         `${medicineId}::${scheduledAt}`,
-        { status: STATE_SNOOZED, snoozedUntil }
+        { status: STATE_SNOOZED, snoozedUntil, ts: Date.now() }
       );
-      this._lastSig = null;
-      this._render();
+      if (!this._bulkInProgress) {
+        this._lastSig = null;
+        this._render();
+      }
     }
     const data = { medicine_id: medicineId, minutes };
     if (scheduledAt) data.scheduled_for = scheduledAt;
@@ -2068,8 +2096,10 @@ class PillPilotPanel extends HTMLElement {
       // v0.2.14: clear any optimistic override so the real state
       // (which the backend is about to revert) is what we render.
       this._optimisticOverrides.delete(`${medicineId}::${scheduledAt}`);
-      this._lastSig = null;
-      this._render();
+      if (!this._bulkInProgress) {
+        this._lastSig = null;
+        this._render();
+      }
     }
     const data = { medicine_id: medicineId };
     if (scheduledAt) data.scheduled_for = scheduledAt;
@@ -2116,13 +2146,18 @@ class PillPilotPanel extends HTMLElement {
       medicineId: d.medicineId,
       scheduledAt: d.scheduledAt,
     }));
-    for (const d of doses) {
-      this._markTaken(d.medicineId, d.scheduledAt);
+    // v0.2.15: batch the optimistic renders. Each _markTaken sets
+    // its own override but skips its inline render while the flag
+    // is on; we render once at the end. For "Take all" on 10 doses
+    // that's 1 render instead of 11.
+    this._bulkInProgress = true;
+    try {
+      for (const d of doses) {
+        this._markTaken(d.medicineId, d.scheduledAt);
+      }
+    } finally {
+      this._bulkInProgress = false;
     }
-    // Force re-render so the disabled-state of "Undo last action"
-    // updates immediately. The signature-based render-skipping
-    // optimization wouldn't catch this on its own — we just changed
-    // an in-memory field, not any HA state.
     this._lastSig = null;
     this._render();
   }
@@ -2162,8 +2197,13 @@ class PillPilotPanel extends HTMLElement {
     const group = this._findPersonGroup(personKey);
     if (!group) return;
     const targets = group.doses.filter((d) => d.status === STATE_DUE);
-    for (const d of targets) {
-      this._snooze(d.medicineId, d.scheduledAt);
+    this._bulkInProgress = true;
+    try {
+      for (const d of targets) {
+        this._snooze(d.medicineId, d.scheduledAt);
+      }
+    } finally {
+      this._bulkInProgress = false;
     }
     this._lastSig = null;
     this._render();
@@ -2173,8 +2213,13 @@ class PillPilotPanel extends HTMLElement {
     const group = this._findPersonGroup(personKey);
     if (!group) return;
     const targets = group.doses.filter((d) => d.status === STATE_MISSED);
-    for (const d of targets) {
-      this._snooze(d.medicineId, d.scheduledAt);
+    this._bulkInProgress = true;
+    try {
+      for (const d of targets) {
+        this._snooze(d.medicineId, d.scheduledAt);
+      }
+    } finally {
+      this._bulkInProgress = false;
     }
     this._lastSig = null;
     this._render();
@@ -2182,8 +2227,13 @@ class PillPilotPanel extends HTMLElement {
 
   _undoLastForPerson(personKey) {
     const records = this._lastActionMap[personKey] || [];
-    for (const r of records) {
-      this._unmarkTaken(r.medicineId, r.scheduledAt);
+    this._bulkInProgress = true;
+    try {
+      for (const r of records) {
+        this._unmarkTaken(r.medicineId, r.scheduledAt);
+      }
+    } finally {
+      this._bulkInProgress = false;
     }
     this._lastActionMap[personKey] = null;
     this._lastSig = null;
