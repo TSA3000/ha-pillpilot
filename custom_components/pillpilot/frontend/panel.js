@@ -1103,6 +1103,15 @@ class PillPilotPanel extends HTMLElement {
       // call sent to mark_taken. Reset to null after Undo runs. NOT
       // persisted — page reload clears it (acceptable per spec).
       this._lastActionMap = {};
+      // v0.2.14: optimistic overrides for dose slot status. Keyed by
+      // `${medicineId}::${scheduledAt}`. Each value is
+      // {status, actionAt?, snoozedUntil?}. Set immediately when the
+      // user clicks Take/Skip/Snooze (or any of the bulk actions),
+      // applied on top of slot data in _flattenTodayDoses so the
+      // badge flips in the UI before the websocket round-trip
+      // completes. Pruned in _flattenTodayDoses once the real slot
+      // status already matches the override. Cleared by _unmarkTaken.
+      this._optimisticOverrides = new Map();
       // cards-vs-list view mode for the medicines section,
       // persisted per-browser. Default = "cards" matching the
       // pre-v0.2.18 look. Set to "list" via the in-section toggle.
@@ -1661,24 +1670,43 @@ class PillPilotPanel extends HTMLElement {
   // service can route to the right prescription).
   _flattenTodayDoses(meds) {
     const out = [];
+    const ov = this._optimisticOverrides;
     for (const med of meds) {
       const a = med.attributes;
       const name = a.medicine_name || a.friendly_name || med.entity_id;
+      const medId = a.medicine_id;
       const prescriptions = a.prescriptions || [];
       for (const p of prescriptions) {
         const slots = p.today_doses || [];
         for (const slot of slots) {
+          const key = `${medId}::${slot.scheduled_at}`;
+          // v0.2.14: prune overrides that the real state has caught
+          // up with (statuses match), then apply any remaining
+          // override on top of the slot data. This makes Take /
+          // Skip / Snooze feel instant — the badge flips on click,
+          // no waiting for the WS round-trip — and the override
+          // disappears as soon as the backend's view of the slot
+          // matches.
+          const override = ov.get(key);
+          if (override && slot.status === override.status) {
+            ov.delete(key);
+          }
+          const effective = (override && slot.status !== override.status)
+            ? { ...slot, status: override.status,
+                action_at: override.actionAt || slot.action_at,
+                snoozed_until: override.snoozedUntil || slot.snoozed_until }
+            : slot;
           out.push({
-            scheduledAt: slot.scheduled_at,
-            time: slot.time,
-            status: slot.status,
-            actionAt: slot.action_at,
-            snoozedUntil: slot.snoozed_until || null,
+            scheduledAt: effective.scheduled_at,
+            time: effective.time,
+            status: effective.status,
+            actionAt: effective.action_at,
+            snoozedUntil: effective.snoozed_until || null,
             name,
             dose: p.dose || "",
             personName: p.person_name || null,
             personId: p.person_id || null,
-            medicineId: a.medicine_id,
+            medicineId: medId,
             prescriptionId: p.id || "",
           });
         }
@@ -1980,6 +2008,17 @@ class PillPilotPanel extends HTMLElement {
 
   _markTaken(medicineId, scheduledAt) {
     if (!medicineId || !this._hass) return;
+    if (scheduledAt) {
+      // v0.2.14: optimistic — paint the slot taken before the WS
+      // round-trip completes. _flattenTodayDoses overlays this onto
+      // the slot data until the real state catches up.
+      this._optimisticOverrides.set(
+        `${medicineId}::${scheduledAt}`,
+        { status: STATE_TAKEN, actionAt: new Date().toISOString() }
+      );
+      this._lastSig = null;
+      this._render();
+    }
     const data = { medicine_id: medicineId };
     if (scheduledAt) data.scheduled_for = scheduledAt;
     this._hass.callService("pillpilot", "mark_taken", data);
@@ -1987,6 +2026,14 @@ class PillPilotPanel extends HTMLElement {
 
   _skip(medicineId, scheduledAt) {
     if (!medicineId || !this._hass) return;
+    if (scheduledAt) {
+      this._optimisticOverrides.set(
+        `${medicineId}::${scheduledAt}`,
+        { status: STATE_SKIPPED, actionAt: new Date().toISOString() }
+      );
+      this._lastSig = null;
+      this._render();
+    }
     const data = { medicine_id: medicineId };
     if (scheduledAt) data.scheduled_for = scheduledAt;
     this._hass.callService("pillpilot", "skip", data);
@@ -1997,6 +2044,15 @@ class PillPilotPanel extends HTMLElement {
   // all push doses out by the same amount.
   _snooze(medicineId, scheduledAt, minutes = 15) {
     if (!medicineId || !this._hass) return;
+    if (scheduledAt) {
+      const snoozedUntil = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+      this._optimisticOverrides.set(
+        `${medicineId}::${scheduledAt}`,
+        { status: STATE_SNOOZED, snoozedUntil }
+      );
+      this._lastSig = null;
+      this._render();
+    }
     const data = { medicine_id: medicineId, minutes };
     if (scheduledAt) data.scheduled_for = scheduledAt;
     this._hass.callService("pillpilot", "snooze", data);
@@ -2008,6 +2064,13 @@ class PillPilotPanel extends HTMLElement {
   // MedicineCoordinator.async_unmark_taken.
   _unmarkTaken(medicineId, scheduledAt) {
     if (!medicineId || !this._hass) return;
+    if (scheduledAt) {
+      // v0.2.14: clear any optimistic override so the real state
+      // (which the backend is about to revert) is what we render.
+      this._optimisticOverrides.delete(`${medicineId}::${scheduledAt}`);
+      this._lastSig = null;
+      this._render();
+    }
     const data = { medicine_id: medicineId };
     if (scheduledAt) data.scheduled_for = scheduledAt;
     this._hass.callService("pillpilot", "unmark_taken", data);

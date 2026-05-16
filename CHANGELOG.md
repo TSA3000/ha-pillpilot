@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.14] — 2026-05-16
+
+Optimistic UI for dose actions. Drop-in upgrade from 0.2.13.
+
+- **Take / Skip / Snooze and Undo now update the badge immediately**, before the websocket round-trip completes. Each action sets an entry in `this._optimisticOverrides` keyed by `${medicineId}::${scheduledAt}` and re-renders; `_flattenTodayDoses` overlays the override on top of the slot data when rendering, and prunes the override once the backend's view of the slot has caught up. Bulk actions (Take all / Take all due / Take all missed / Snooze all due / Snooze all missed) flip every targeted row instantly for the same reason — each routes through the optimistic helper. Pre-v0.2.14 the panel re-rendered with stale state after a click and only flipped to the new status when HA pushed a state update, which felt sluggish (and visibly stuck on bulk actions until a page reload).
+
 ## [0.2.13] — 2026-05-16
 
 Variant-driven strength selector. Drop-in upgrade from 0.2.12.

@@ -1,23 +1,13 @@
-# v0.2.13
+# v0.2.14
 
-> Variant-driven strength selector. Drop-in upgrade from 0.2.12.
+> Optimistic UI for dose actions. Drop-in upgrade from 0.2.13.
 
-## What's new
+## What's fixed
 
-Strength is no longer a free-text mg number — it's a catalog variant. When you Add or Edit a prescription for a medicine that's in `medicines_se.json`, the Strength field is a dropdown of every variant Läkemedelsverket has: `5 mg — Filmdragerad tablett`, `10 mg — Filmdragerad tablett`, etc. Pick one. The form, NPL ID and the rendered dose string all populate from your choice.
+Tapping **Take**, **Skip**, **Snooze**, or **Undo** on a dose now flips the badge immediately. Same for the bulk actions (**Take all**, **Take all due**, **Take all missed**, **Snooze all due**, **Snooze all missed**). Pre-v0.2.14 the panel waited for the backend's websocket round-trip before re-rendering, which made single-dose actions feel sluggish and made bulk actions look broken — you had to reload the page to see the change.
 
-Off-catalog medicines (or values that aren't in the catalog) get two free-text fields instead: Strength (any string, e.g. `0,15 mg` or `100 IU`) and Form (e.g. `tablet`). Pick **Custom…** at the bottom of the dropdown to switch modes.
-
-The dose-display string follows: `1 pill × 5 mg Filmdragerad tablett = 5 mg`, `1 puff × 87 mikrogram/5 mikrogram/9 mikrogram Inhalationsspray`, `10 units × 100 E/ml Injektionsvätska`. The `= total mg` suffix only appears when the strength is a simple `<number> mg` — combos, concentrations, IUs etc. don't have a meaningful total to compute.
-
-## Migration
-
-Every existing prescription auto-migrates at integration setup. The legacy `unit_strength_mg: 5.0` becomes `variant_strength: "5 mg"` with empty form and NPL ID. Open Edit on any medicine and the dropdown shows `"5 mg (current)"` pre-selected — Save without changes preserves the value. Pick a real catalog variant from the dropdown to attach a form.
-
-`unit_strength_mg` stays on disk for this release as a downgrade safety net — anyone pausing the upgrade and rolling back to v0.2.12 reads the legacy value cleanly. It'll be removed at v1.0.0.
-
-`total_dose_mg` sensor attribute is now computed live — it stays populated for any mg-parseable variant (all migrated data + any mg variant you pick from the catalog) and becomes `unknown` for combo / IU / mL / % variants where the math doesn't apply.
+The fix is panel-side optimistic UI. The new `_optimisticOverrides` map records the intended new status (taken / skipped / snoozed) for each clicked dose slot, the renderer overlays it on top of the slot data immediately, and the override is automatically pruned as soon as the backend's actual state catches up. If the service call fails on the backend, the next state push reverts the badge to its real status.
 
 ## Upgrading
 
-Replace the `pillpilot` directory in `custom_components/` with the contents of this zip and restart Home Assistant. HACS users: update normally. The migration runs once at setup; the log line to look for is `Migrated N medicine subentry/subentries to v0.2.13 variants`.
+Replace the `pillpilot` directory in `custom_components/` with the contents of this zip and restart Home Assistant. HACS users: update normally. No data changes — frontend-only fix.
