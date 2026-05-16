@@ -1,47 +1,21 @@
 # Changelog
 
-## [0.2.15] — 2026-05-16
+## [0.2.16] — 2026-05-16
 
-Panel responsiveness pass. Drop-in upgrade from 0.2.14.
-
-- **Bulk actions render once, not N+1 times.** Pre-v0.2.15 every single-dose helper called `_render()` after setting its optimistic override; bulk handlers then did their own final `_render()` on top. For Take all on 10 doses that's 11 `innerHTML` rewrites per click. v0.2.15 wraps each bulk loop in a `_bulkInProgress` flag — single-dose helpers skip their inline render while the flag is on, the bulk handler renders once at the end.
-- **Optimistic overrides have a 60s TTL.** If a service call silently fails on the backend, the optimistic badge no longer lies forever. `_flattenTodayDoses` now also prunes any override older than 60s whose real status hasn't caught up, letting the actual state win.
-- **`_getMedicines` cached per `hass.states` reference.** `_signature`, `_renderFull`, `_findPersonGroup` and the modal datalist refresh all hit this helper within the same render cycle. The cache key invalidates correctly because HA replaces the states object on every entity change. Cuts the per-render entity-table walk from 3-4 passes to 1 on instances with many non-PillPilot entities.
-
-## [0.2.14] — 2026-05-16
-
-Optimistic UI for dose actions. Drop-in upgrade from 0.2.13.
-
-- **Take / Skip / Snooze and Undo now update the badge immediately**, before the websocket round-trip completes. Each action sets an entry in `this._optimisticOverrides` keyed by `${medicineId}::${scheduledAt}` and re-renders; `_flattenTodayDoses` overlays the override on top of the slot data when rendering, and prunes the override once the backend's view of the slot has caught up. Bulk actions (Take all / Take all due / Take all missed / Snooze all due / Snooze all missed) flip every targeted row instantly for the same reason — each routes through the optimistic helper. Pre-v0.2.14 the panel re-rendered with stale state after a click and only flipped to the new status when HA pushed a state update, which felt sluggish (and visibly stuck on bulk actions until a page reload).
-
-## [0.2.13] — 2026-05-16
-
-Variant-driven strength selector. Drop-in upgrade from 0.2.12.
-
-- **Strength is now a catalog variant**, not a free-text mg number. Prescriptions store `variant_strength` (verbatim catalog string like `"5 mg"`, `"0,15 mg"`, `"100 E/ml"`, `"87 mikrogram/5 mikrogram/9 mikrogram"`), `variant_form` (e.g. `"Filmdragerad tablett"`), and `variant_npl_id` (pointer back to the catalog entry, or `null` for off-catalog medicines). The old `unit_strength_mg: float` field stays on disk for one release for downgrade safety — `# REMOVE AT v1.0.0`.
-- **Add/Edit prescription form rewritten.** When the medicine name matches a catalog entry, the Strength input becomes a dropdown of all variants. Each option reads `"5 mg — Filmdragerad tablett"`. A `Custom…` item at the bottom flips to two free-text fields (strength + form) for off-list values. When the name doesn't match the catalog at all, the form goes straight to the two-text-field path.
-- **Existing prescriptions auto-migrate to mg variants.** `_migrate_subentries_to_v0213_variants` synthesizes `variant_strength = f"{unit_strength_mg:g} mg"` for every prescription that pre-dates this release. `variant_form` and `variant_npl_id` are left empty so the user can pick the matching catalog variant on next edit if they want. Idempotent.
-- **Edit modal preserves migrated values.** When a prescription's `(variant_strength, variant_form)` doesn't match any catalog variant exactly (every migrated prescription has empty form, so this is everyone post-upgrade), the dropdown shows a synthetic `"5 mg (current)"` option at the top, pre-selected — Save without changes keeps the existing value.
-- **`total_dose_mg` sensor attribute now computed on the fly.** Returns the count×value product when `variant_strength` parses as `<number> mg` (matches all migrated data and every mg variant from the catalog). Returns `None` for combo / IU / mL / % variants — the math doesn't apply. Automations referencing `total_dose_mg` see `unknown` instead of a wrong number.
-- **Dose display rewritten.** Format goes from `"1 pill × 5 mg = 5 mg"` to `"1 pill × 5 mg Filmdragerad tablett = 5 mg"`. The `= total mg` suffix is dropped for non-mg variants since there's no meaningful total (`"1 puff × 87 mikrogram/5 mikrogram/9 mikrogram Inhalationsspray"`). Pure-count prescriptions with no variant data render as `"1 pill"`.
-- **Dose model rewrite** in `dose.py`. The `Dose` dataclass swaps `strength_mg: float` for `variant_strength: str` + `variant_form: str`; `total_mg` becomes an `Optional[float]` computed via regex against the strength string. Pure data model with no HA dependencies — still unit-testable in isolation.
-- **HA Settings reconfigure flow updated.** The `NumberSelector(unit_of_measurement="mg")` strength field is replaced with two text inputs: required `Strength` and optional `Form`. NPL ID auto-fill (from v0.2.11) still works.
-
-## [0.2.12] — 2026-05-16
-
-Catalog schema v2 — per-medicine variants. Drop-in upgrade from 0.2.11.
-
-- **`medicines_se.json` is now schema v2.** Each medicine carries a `variants` array (one entry per distinct strength/form combo) instead of the v1 single top-level `npl_id` + flat `common_forms` list. Concerta now resolves to four variants (18/27/36/54 mg Depottablett), Trimbow to three (combo strengths), Eliquis to six (0,15 mg through 5 mg across granules/dospåse/tablets), etc. Parallel imports of the same strength/form are deduped — first NPL-id wins. 7331 medicines, 14477 variants total.
-- **Loader handles v1 and v2.** `_normalize_entry` reads `variants` when present and back-derives top-level `npl_id` (first variant) and `common_forms` (deduped variant forms) so every existing code path keeps working unchanged. v1 entries (no `variants` array) load exactly as before.
-- **Content-drift detection extended.** `_bundled_has_content_drift` now samples the `variants` field alongside the scalars. The v2 bundle force-loads over a v1 stored cache even though `list_version` stays at `2026.05.10-1` — no manual Refresh needed after upgrade.
-- **`sanitize_for_ws` forwards variants to the panel.** The websocket payload from `pillpilot/get_medicines_db` gains a `variants` list on each entry.
-- **Modal shows available strengths.** Picking a known medicine in the Add/Edit modal surfaces a read-only **Available strengths (from catalog)** section listing every variant as a chip (`5 mg — Filmdragerad tablett`, `10 mg — Filmdragerad tablett`, …). Form unchanged — strength is still free-text in this release. The variant-driven dropdown lands in v0.2.13.
-- **Build tool updated** at `tools/build_medicines_se.py` to extract `Styrka`, `Form`, and `NPL-id` per row and emit them as the variants array. Stats line now reports `dedup_parallel_imports`. Still maintainer-only — not shipped in the integration zip.
-- **README schema documentation refreshed** to describe the variants shape.
+- Catalog schema v2 — `medicines_se.json` carries 14477 variants across 7331 medicines, each a `{npl_id, strength, form}` triple. Concerta resolves to four variants (18/27/36/54 mg Depottablett), Trimbow to three combo strengths, Eliquis to six across granules/dospåse/tablets. Loader handles both v1 and v2 entries; `_bundled_has_content_drift` samples the `variants` field so the v2 bundle force-loads over a v1 stored cache.
+- Variant-driven strength selector replaces the free-text mg input. When the medicine name matches the catalog, the strength field is a dropdown of every variant (`5 mg — Filmdragerad tablett`, `10 mg — Filmdragerad tablett`, …). A `Custom…` option flips to two free-text fields (strength + form) for off-list values. Off-catalog medicines go straight to the two-text-field path.
+- Prescriptions store `variant_strength` (verbatim catalog string — `"5 mg"`, `"0,15 mg"`, `"100 E/ml"`, `"87 mikrogram/5 mikrogram/9 mikrogram"`), `variant_form` (e.g. `"Filmdragerad tablett"`), and `variant_npl_id`. The legacy `unit_strength_mg: float` field stays on disk for downgrade safety — `# REMOVE AT v1.0.0`.
+- Migration synthesizes `variant_strength = f"{unit_strength_mg:g} mg"` for every pre-v0.2.16 prescription. `variant_form` and `variant_npl_id` are left empty. Edit modal shows `"5 mg (current)"` pre-selected so Save without changes keeps the existing value. Idempotent.
+- `total_dose_mg` sensor attribute is computed on the fly: `count × value` when `variant_strength` parses as `<number> mg`, `None` otherwise (combo / IU / mL / % variants).
+- Dose display: `"1 pill × 5 mg Filmdragerad tablett = 5 mg"`. The `= total mg` suffix is dropped for non-mg variants. Pure-count prescriptions with no variant render as `"1 pill"`.
+- HA Settings reconfigure flow gets two text inputs (Strength, Form) in place of the `NumberSelector(unit_of_measurement="mg")`. NPL ID auto-fill still works.
+- `_pendingActions` indicator on dose-action buttons. Click Take / Skip / Snooze / Undo and the action buttons are replaced by a **Saving…** spinner until the backend pushes the new state. 30 s safety TTL.
+- `_bulkInProgress` flag batches bulk-action renders to one per click instead of N+1.
+- `_getMedicines` cached per `hass.states` reference — one entity-table walk per state push instead of 3-4.
+- Dose model rewrite in `dose.py`: `Dose` swaps `strength_mg: float` for `variant_strength: str` + `variant_form: str`; `total_mg` becomes `Optional[float]` via regex against the strength string. No HA dependencies, unit-testable.
+- Build tool at `tools/build_medicines_se.py` extracts `Styrka`, `Form`, `NPL-id` per row. Maintainer-only — not shipped in the integration zip.
 
 ## [0.2.11] — 2026-05-10
-
-Catalog auto-fill cleanup. Drop-in upgrade from 0.2.10.
 
 - **NPL ID auto-fills in the HA Settings reconfigure flow.** v0.2.10 wired the catalog → form auto-fill in the panel's Add/Edit modal but missed the same logic in `config_flow.py`. Both `validate_medicine_input` and `validate_medicine_input_multi` now compute `npl_final = user_npl or catalog_npl or None` the same way they already compute `atc_final`. User-entered NPL IDs are still never overwritten.
 - **Content-drift detection in `MedicineDatabase.async_load`.** Versions-only comparison missed the v0.2.9 → v0.2.10 case where the schema gained `npl_id` per entry but `list_version` stayed the same — anyone whose stored cache was written by v0.2.9's normalizer never got NPL IDs until they ran Refresh by hand. v0.2.11 samples up to 500 entries from each side and force-loads the bundled file when its entries have a populated field (`npl_id`, `atc_code`, `active_substance`) that the stored copy lacks across the board.
@@ -49,29 +23,19 @@ Catalog auto-fill cleanup. Drop-in upgrade from 0.2.10.
 
 ## [0.2.10] — 2026-05-10
 
-Two fixes from v0.2.9 testing. Drop-in upgrade from 0.2.9.
-
 - **Bundled medicines list wins when newer.** `MedicineDatabase.async_load` now compares `list_version` between the integration's bundled file and the user's stored copy; the lexicographically newer one wins (the `YYYY.MM.DD-N` format sorts correctly that way). Pre-v0.2.10, anyone who'd ever clicked **Refresh medicine list now** stayed pinned to that cached list across integration upgrades — the v0.2.9 jump from 216 to 7331 bundled entries was invisible until a manual re-refresh. Explicit URL refreshes ahead of the bundle still win.
 - **NPL ID auto-fills from the catalog.** Picking a known medicine in the Add/Edit modal now populates the NPL ID field the same way ATC code and active substance already do. Three spots fixed: `_normalize_entry` preserves `npl_id` on load (was being stripped), `sanitize_for_ws` forwards it to the panel over `pillpilot/get_medicines_db`, and `_applyDrugNameAutoFill` copies it into the draft when empty. User-entered NPL IDs are never overwritten.
 
 ## [0.2.9] — 2026-05-10
-
-Medicine list rebuilt from Läkemedelsverket. Drop-in upgrade from 0.2.8.
 
 - **List source switched to Läkemedelsverket's open-data register** ([dataset 140_5467](https://www.dataportal.se/datasets/140_5467) — Sök läkemedelsfakta, distribution `Lakemedelsprodukter.xlsx`). 216 hand-curated entries → 7331. Covers every human medicine currently `Godkänd` or `Registrerad`; veterinary and deregistered products filtered at build time. Snapshot 2026-05-10. Each entry now carries `npl_id`, and `aliases` picks up former product names from the `Tidigare läkemedelsnamn` column.
 - **Build tool** at `tools/build_medicines_se.py`. Reads `Lakemedelsprodukter.xlsx` (also csv/tsv/xml/json), groups per-strength rows by name, preserves curated aliases on existing entries, bumps `list_version`. Not shipped in the integration zip.
 
 ## [0.2.8] — 2026-05-10
 
-Snooze UX. Drop-in upgrade from 0.2.7.
-
 - **Snooze button on every actionable row.** Due, missed, and upcoming slots now render Take / Snooze / Skip in the panel, matching the mobile notification's button set. Tapping Snooze calls `pillpilot.snooze` with `minutes=15` and the slot's `scheduled_for`.
 - **Snooze all due (15m)** and **Snooze all missed (15m)** in the per-person kebab menu. Iterates the matching slots and fires one snooze per slot. Disabled when there's nothing in that bucket.
-- **No new bus events or schema changes.** Same `pillpilot.snooze` service, same `pillpilot_dose_snoozed` event, same `DoseRecord` fields. Drop-in upgrade.
-
-## [0.2.7] — 2026-05-10
-
-Snooze fix. Drop-in upgrade from 0.2.6.
+- **No new bus events or schema changes.** Same `pillpilot.snooze` service, same `pillpilot_dose_snoozed` event, same `DoseRecord` fields. ## [0.2.7] — 2026-05-10
 
 - **Snooze actually works.** Tapping Snooze 15m on a notification (or calling `pillpilot.snooze`) used to be a no-op: the integration wrote a junk `DoseRecord` with `scheduled_for = now + 15min`, which never matched any RRULE-derived slot. The original dose stayed `due`, then flipped to `missed`, no follow-up notification ever fired, and the orphan record sat in `.storage` forever. Snooze now writes `snoozed_until` onto the record for the original scheduled slot; the tick re-fires `pillpilot_dose_due` once the snooze elapses, and the bundled `notify_dose` blueprint sends a fresh notification with the same Taken / Snooze / Skip buttons.
 - **New `pillpilot_dose_snoozed` event** on the bus. Fires immediately when a snooze is recorded, with `medicine_id`, `scheduled_for`, `snoozed_until`, `minutes`, and `person_id`. Useful for logbook entries and custom automations.
@@ -84,19 +48,13 @@ Snooze fix. Drop-in upgrade from 0.2.6.
 
 ## [0.2.6] — 2026-05-10
 
-Blueprint hotfix. Drop-in upgrade from 0.2.5.
-
 - **`handle_actions` blueprint fixed.** Tapping Taken / Snooze / Skip on a PillPilot notification did nothing — the trace showed `UndefinedError: 'len' is undefined`, the matching `pillpilot.*` service never ran, and the dose stayed unmarked. The mobile_app integration dismisses the notification on action tap whether the automation succeeded or not, hiding the failure. Cause: `action[len('PILL_TAKEN_'):]` used Python's `len()`, which HA's Jinja2 sandbox doesn't expose. Replaced with the `replace` filter (`{{ action | replace('PILL_TAKEN_', '', 1) }}`) in all three branches. No integration code changed. Users need to re-import the blueprint and reload automations after upgrading. Fixes #3.
 
 ## [0.2.5] — 2026-05-09
 
-Bugfix release. Drop-in upgrade from 0.2.4.
-
 - **HA Settings form labels.** Every field inside a section in the medicine reconfigure form (Identity, Identifiers, Schedule, Per-weekday) was rendering as its raw constant name — `days_of_month`, `interval_days`, `starts_on`, `ends_on`, `name`, `varunummer`, `times_mon`, etc. — instead of the human-readable label. Cause: the labels lived at `config_subentries.medicine.step.<step>.data.<field>` but HA looks them up under `sections.<section_name>.data.<field>` for fields inside a `section()`. Restructured all three translation files (`strings.json`, `translations/en.json`, `translations/sv.json`) to put each section's field labels in the right slot. Parity held at 178/178/178.
 
 ## [0.2.4] — 2026-05-09
-
-Fixes a long-standing bug in interval-mode scheduling and adds a configurable Start date. Drop-in upgrade from 0.2.2.
 
 - **Start date for interval prescriptions.** New optional field on Every-N-days schedules. Set it to a past date when adding a medicine retroactively (e.g. last shot taken 7 days ago for a 14-day cycle) — the next-due math anchors to that date, not to today. Blank means "start today" and stamps today's date at save time so the anchor persists.
 - **Anchor now stored persistently.** Pre-0.2.4 the rrule's DTSTART was implicitly `date.today()` at every load. The cycle phase shifted on every HA restart — an "every 14 days" schedule that had been firing on Mondays would silently start firing on Wednesdays after a Wednesday reboot. The anchor is now stored on the prescription and stable across restarts.
@@ -105,8 +63,6 @@ Fixes a long-standing bug in interval-mode scheduling and adds a configurable St
 - Panel summary line for interval prescriptions now reads "Every N days from <date> · <times>" — surfaces the anchor inline so a misalignment is visible at a glance.
 
 ## [0.2.2] — 2026-05-09
-
-UX bugfix and docs release. Drop-in upgrade from 0.2.1.
 
 - **Empty schedules now rejected.** A prescription with no dose times in simple mode, or with all-empty rows in per-weekday mode, is rejected at validation. Previously such prescriptions were saved silently and never fired reminders. New translation keys `times_required` and `times_per_weekday_required` (en + sv).
 - **Modal closes on Escape.** Pressing Escape closes the prescription sub-modal first if open, otherwise the Add/Edit medicine modal. Suppressed during save so an in-flight request can't be dismissed.

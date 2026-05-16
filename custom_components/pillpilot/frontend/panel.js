@@ -839,6 +839,28 @@ const STYLES = `
     font-size: 12px;
     color: var(--error-color, #f44336);
   }
+  /* v0.2.16: pending-action indicator. Sized to match the
+     action-button row height so state changes don't reflow. */
+  .dose-pending {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    color: var(--secondary-text-color, #888);
+    font-size: 13px;
+  }
+  .pending-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: pp-spin 0.7s linear infinite;
+  }
+  @keyframes pp-spin {
+    to { transform: rotate(360deg); }
+  }
   /* v0.2.12: catalog variants hint inside the Add/Edit medicine
      modal. Read-only — shows the strength/form combos
      Läkemedelsverket has for the picked medicine so the user can
@@ -1103,15 +1125,13 @@ class PillPilotPanel extends HTMLElement {
       // call sent to mark_taken. Reset to null after Undo runs. NOT
       // persisted — page reload clears it (acceptable per spec).
       this._lastActionMap = {};
-      // v0.2.14: optimistic overrides for dose slot status. Keyed by
-      // `${medicineId}::${scheduledAt}`. Each value is
-      // {status, actionAt?, snoozedUntil?}. Set immediately when the
-      // user clicks Take/Skip/Snooze (or any of the bulk actions),
-      // applied on top of slot data in _flattenTodayDoses so the
-      // badge flips in the UI before the websocket round-trip
-      // completes. Pruned in _flattenTodayDoses once the real slot
-      // status already matches the override. Cleared by _unmarkTaken.
-      this._optimisticOverrides = new Map();
+      // v0.2.16: pending-action map. Keyed by
+      // `${medicineId}::${scheduledAt}`, value
+      // { targetCheck(status) -> bool, ts }. _renderRowActions
+      // shows a Saving… spinner instead of the action buttons
+      // while the entry exists. _flattenTodayDoses drops the entry
+      // when targetCheck matches the real slot status or after 30 s.
+      this._pendingActions = new Map();
       // cards-vs-list view mode for the medicines section,
       // persisted per-browser. Default = "cards" matching the
       // pre-v0.2.18 look. Set to "list" via the in-section toggle.
@@ -1680,7 +1700,7 @@ class PillPilotPanel extends HTMLElement {
   // service can route to the right prescription).
   _flattenTodayDoses(meds) {
     const out = [];
-    const ov = this._optimisticOverrides;
+    const pendings = this._pendingActions;
     const now = Date.now();
     for (const med of meds) {
       const a = med.attributes;
@@ -1691,43 +1711,28 @@ class PillPilotPanel extends HTMLElement {
         const slots = p.today_doses || [];
         for (const slot of slots) {
           const key = `${medId}::${slot.scheduled_at}`;
-          // v0.2.14: prune overrides that the real state has caught
-          // up with (statuses match), then apply any remaining
-          // override on top of the slot data. This makes Take /
-          // Skip / Snooze feel instant — the badge flips on click,
-          // no waiting for the WS round-trip — and the override
-          // disappears as soon as the backend's view of the slot
-          // matches.
-          // v0.2.15: TTL prune. If the override is older than 60s
-          // and the real state still hasn't caught up, the backend
-          // probably dropped the call silently — let the real
-          // status win so the badge stops lying.
-          const override = ov.get(key);
-          if (override) {
-            if (slot.status === override.status) {
-              ov.delete(key);
-            } else if (override.ts && now - override.ts > 60000) {
-              ov.delete(key);
+          // v0.2.16: clear the pending entry once the real status
+          // matches the action's target, or after a 30 s TTL.
+          const pending = pendings.get(key);
+          if (pending) {
+            if (pending.targetCheck(slot.status) || now - pending.ts > 30000) {
+              pendings.delete(key);
             }
           }
-          const effOverride = ov.get(key);
-          const effective = (effOverride && slot.status !== effOverride.status)
-            ? { ...slot, status: effOverride.status,
-                action_at: effOverride.actionAt || slot.action_at,
-                snoozed_until: effOverride.snoozedUntil || slot.snoozed_until }
-            : slot;
+          const isPending = pendings.has(key);
           out.push({
-            scheduledAt: effective.scheduled_at,
-            time: effective.time,
-            status: effective.status,
-            actionAt: effective.action_at,
-            snoozedUntil: effective.snoozed_until || null,
+            scheduledAt: slot.scheduled_at,
+            time: slot.time,
+            status: slot.status,
+            actionAt: slot.action_at,
+            snoozedUntil: slot.snoozed_until || null,
             name,
             dose: p.dose || "",
             personName: p.person_name || null,
             personId: p.person_id || null,
             medicineId: medId,
             prescriptionId: p.id || "",
+            pending: isPending,
           });
         }
       }
@@ -2029,14 +2034,9 @@ class PillPilotPanel extends HTMLElement {
   _markTaken(medicineId, scheduledAt) {
     if (!medicineId || !this._hass) return;
     if (scheduledAt) {
-      // v0.2.14: optimistic — paint the slot taken before the WS
-      // round-trip completes. _flattenTodayDoses overlays this onto
-      // the slot data until the real state catches up.
-      // v0.2.15: ts for TTL; the override drops on its own after
-      // 60s if real state never catches up (silent backend failure).
-      this._optimisticOverrides.set(
+      this._pendingActions.set(
         `${medicineId}::${scheduledAt}`,
-        { status: STATE_TAKEN, actionAt: new Date().toISOString(), ts: Date.now() }
+        { targetCheck: (s) => s === STATE_TAKEN, ts: Date.now() }
       );
       if (!this._bulkInProgress) {
         this._lastSig = null;
@@ -2051,9 +2051,9 @@ class PillPilotPanel extends HTMLElement {
   _skip(medicineId, scheduledAt) {
     if (!medicineId || !this._hass) return;
     if (scheduledAt) {
-      this._optimisticOverrides.set(
+      this._pendingActions.set(
         `${medicineId}::${scheduledAt}`,
-        { status: STATE_SKIPPED, actionAt: new Date().toISOString(), ts: Date.now() }
+        { targetCheck: (s) => s === STATE_SKIPPED, ts: Date.now() }
       );
       if (!this._bulkInProgress) {
         this._lastSig = null;
@@ -2071,10 +2071,9 @@ class PillPilotPanel extends HTMLElement {
   _snooze(medicineId, scheduledAt, minutes = 15) {
     if (!medicineId || !this._hass) return;
     if (scheduledAt) {
-      const snoozedUntil = new Date(Date.now() + minutes * 60 * 1000).toISOString();
-      this._optimisticOverrides.set(
+      this._pendingActions.set(
         `${medicineId}::${scheduledAt}`,
-        { status: STATE_SNOOZED, snoozedUntil, ts: Date.now() }
+        { targetCheck: (s) => s === STATE_SNOOZED, ts: Date.now() }
       );
       if (!this._bulkInProgress) {
         this._lastSig = null;
@@ -2093,9 +2092,13 @@ class PillPilotPanel extends HTMLElement {
   _unmarkTaken(medicineId, scheduledAt) {
     if (!medicineId || !this._hass) return;
     if (scheduledAt) {
-      // v0.2.14: clear any optimistic override so the real state
-      // (which the backend is about to revert) is what we render.
-      this._optimisticOverrides.delete(`${medicineId}::${scheduledAt}`);
+      // Undo targets "any status other than Taken" — could land on
+      // due, missed, or upcoming depending on window. So the
+      // target-check is the negation.
+      this._pendingActions.set(
+        `${medicineId}::${scheduledAt}`,
+        { targetCheck: (s) => s !== STATE_TAKEN, ts: Date.now() }
+      );
       if (!this._bulkInProgress) {
         this._lastSig = null;
         this._render();
@@ -2146,10 +2149,11 @@ class PillPilotPanel extends HTMLElement {
       medicineId: d.medicineId,
       scheduledAt: d.scheduledAt,
     }));
-    // v0.2.15: batch the optimistic renders. Each _markTaken sets
-    // its own override but skips its inline render while the flag
-    // is on; we render once at the end. For "Take all" on 10 doses
-    // that's 1 render instead of 11.
+    // v0.2.15/v0.2.16: batch renders during a bulk loop. Each
+    // single-dose helper sets its pending entry but skips its
+    // inline render while the flag is on; we render once at the
+    // end. For "Take all" on 10 doses that's 1 render instead
+    // of 11.
     this._bulkInProgress = true;
     try {
       for (const d of doses) {
@@ -3904,6 +3908,17 @@ class PillPilotPanel extends HTMLElement {
   }
 
   _renderRowActions(d) {
+    // v0.2.16: pending wins over status branches. The user just
+    // clicked; show Saving… until the WS push lands or the 30 s
+    // TTL drops the pending entry.
+    if (d.pending) {
+      return `
+        <div class="dose-pending" title="Saving…">
+          <span class="pending-spinner"></span>
+          <span class="pending-label">Saving…</span>
+        </div>
+      `;
+    }
     if (d.status === STATE_TAKEN) {
       const at = this._formatActionTime(d.actionAt);
       const sched = escapeHtml(d.scheduledAt || "");

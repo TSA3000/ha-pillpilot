@@ -3,9 +3,9 @@ Coordinator: tick every minute, evaluate medicine schedules, fire bus
 events, persist history, and (when sources are registered) enrich each
 medicine via every source.
 
-As of v0.2.14 no built-in sources ship — ``self._sources`` is an empty
-list and the enrichment loop is a no-op. The plumbing is kept so the
-v0.2.16 FASS-web-link source can plug in cleanly.
+No built-in sources ship — ``self._sources`` is an empty list and the
+enrichment loop is a no-op. The plumbing is kept for future source
+plug-ins.
 """
 from __future__ import annotations
 

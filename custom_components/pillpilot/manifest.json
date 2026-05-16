@@ -1,7 +1,7 @@
 {
   "domain": "pillpilot",
   "name": "PillPilot",
-  "version": "0.2.15",
+  "version": "0.2.16",
   "documentation": "https://github.com/TSA3000/ha-pillpilot",
   "issue_tracker": "https://github.com/TSA3000/ha-pillpilot/issues",
   "codeowners": ["@TSA3000"],
