@@ -176,7 +176,9 @@ class MedicineSensor(CoordinatorEntity[MedicineCoordinator], SensorEntity):
                     "person_name": p.person_name,
                     "dose": p.dose,
                     "unit_count": p.unit_count,
-                    "unit_strength_mg": p.unit_strength_mg,
+                    "variant_strength": p.variant_strength,
+                    "variant_form": p.variant_form,
+                    "variant_npl_id": p.variant_npl_id,
                     "total_dose_mg": p.total_dose_mg,
                     "frequency": p.frequency,
                     "scheduled_times": p.times,
@@ -204,7 +206,9 @@ class MedicineSensor(CoordinatorEntity[MedicineCoordinator], SensorEntity):
             # first person's view, which matches how a single-person
             # household would experience it.
             "unit_count": s.unit_count,
-            "unit_strength_mg": s.unit_strength_mg,
+            "variant_strength": s.variant_strength,
+            "variant_form": s.variant_form,
+            "variant_npl_id": s.variant_npl_id,
             "total_dose_mg": s.total_dose_mg,
             "dose": s.dose,
             "scheduled_times": s.times,

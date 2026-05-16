@@ -208,6 +208,72 @@ def _migrate_subentries_to_v024_starts_on(
     return migrated
 
 
+def _migrate_subentries_to_v0213_variants(
+    hass: HomeAssistant, entry: ConfigEntry
+) -> int:
+    """Synthesize variant_strength / variant_form / variant_npl_id
+    on prescriptions that pre-date v0.2.13.
+
+    Pre-v0.2.13 every prescription stored ``unit_strength_mg: float``
+    only — there was no notion of catalog variants or non-mg
+    strengths. v0.2.13 splits strength into ``variant_strength`` (the
+    verbatim catalog string, e.g. "5 mg") and ``variant_form``
+    (e.g. "Filmdragerad tablett"). For existing data every prescription
+    is mg-typed by construction, so we synthesize ``"{n:g} mg"`` from
+    the legacy float and leave form + npl_id empty — the user can
+    pick the matching catalog variant on next edit if they want.
+
+    ``unit_strength_mg`` is preserved on disk for one release so a
+    pause-and-downgrade to v0.2.12 still reads the legacy value.
+
+    Idempotent: skips prescriptions that already have
+    ``variant_strength`` set.
+
+    REMOVE AT v1.0.0 — by v1.0 every active install has passed
+    through a 0.x.x release that ran this migration.
+    """
+    migrated = 0
+    for sub in list(entry.subentries.values()):
+        if sub.subentry_type != SUBENTRY_TYPE_MEDICINE:
+            continue
+        prescriptions = sub.data.get("prescriptions") or []
+        if not prescriptions:
+            continue
+        new_prescriptions: list[dict[str, Any]] = []
+        changed = False
+        for p in prescriptions:
+            if p.get("variant_strength"):
+                new_prescriptions.append(p)
+                continue
+            legacy_mg = p.get("unit_strength_mg")
+            try:
+                mg_val = float(legacy_mg) if legacy_mg is not None else 0.0
+            except (TypeError, ValueError):
+                mg_val = 0.0
+            new_p = {
+                **p,
+                "variant_strength": (
+                    f"{mg_val:g} mg" if mg_val > 0 else ""
+                ),
+                "variant_form": "",
+                "variant_npl_id": None,
+            }
+            new_prescriptions.append(new_p)
+            changed = True
+        if not changed:
+            continue
+        new_data = {**sub.data, "prescriptions": new_prescriptions}
+        try:
+            hass.config_entries.async_update_subentry(entry, sub, data=new_data)
+            migrated += 1
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception(
+                "Migration to v0.2.13 variants failed for subentry %s",
+                sub.subentry_id,
+            )
+    return migrated
+
+
 # ---------------------------------------------------------------------------
 # Setup / unload
 # ---------------------------------------------------------------------------
@@ -234,6 +300,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.info(
             "Stamped starts_on on %d medicine subentry/subentries (v0.2.4)",
             migrated_v024,
+        )
+
+    # v0.2.13 schema migration — synthesize variant_strength/form
+    # on prescriptions from the legacy unit_strength_mg float.
+    # Idempotent. REMOVE AT v1.0.0.
+    migrated_v0213 = _migrate_subentries_to_v0213_variants(hass, entry)
+    if migrated_v0213:
+        _LOGGER.info(
+            "Migrated %d medicine subentry/subentries to v0.2.13 variants",
+            migrated_v0213,
         )
 
     # Medicines list (Swedish meds) is shared

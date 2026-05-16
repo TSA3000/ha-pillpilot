@@ -54,7 +54,7 @@
                 "name": "Medicine name (search or type)",
                 "med_type": "Medicine type",
                 "unit_count": "Per-dose count (number of pills / drops / injections)",
-                "unit_strength_mg": "Strength per unit",
+                "variant_strength": "Strength", "variant_form": "Form", "variant_npl_id": "Variant NPL ID",
                 "notes": "Notes",
                 "person_id": "Person (optional — leave blank for household)"
               }
@@ -110,7 +110,7 @@
                 "name": "Medicine name (search or type)",
                 "med_type": "Medicine type",
                 "unit_count": "Per-dose count (number of pills / drops / injections)",
-                "unit_strength_mg": "Strength per unit",
+                "variant_strength": "Strength", "variant_form": "Form", "variant_npl_id": "Variant NPL ID",
                 "notes": "Notes",
                 "person_id": "Person (optional — leave blank for household)"
               }

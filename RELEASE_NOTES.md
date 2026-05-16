@@ -1,19 +1,23 @@
-# v0.2.12
+# v0.2.13
 
-> Catalog schema v2 — per-medicine variants. Drop-in upgrade from 0.2.11.
+> Variant-driven strength selector. Drop-in upgrade from 0.2.12.
 
 ## What's new
 
-The bundled `medicines_se.json` ships in schema v2. Each medicine now carries a `variants` array — one entry per distinct strength/form combo. Concerta resolves to four variants (18/27/36/54 mg Depottablett), Trimbow to three combo strengths, Eliquis to six. 7331 medicines, 14477 variants.
+Strength is no longer a free-text mg number — it's a catalog variant. When you Add or Edit a prescription for a medicine that's in `medicines_se.json`, the Strength field is a dropdown of every variant Läkemedelsverket has: `5 mg — Filmdragerad tablett`, `10 mg — Filmdragerad tablett`, etc. Pick one. The form, NPL ID and the rendered dose string all populate from your choice.
 
-When you pick a known medicine in the Add/Edit modal, a new read-only **Available strengths (from catalog)** section appears between the codes and prescriptions. It lists every variant as a chip: `5 mg — Filmdragerad tablett`, `10 mg — Filmdragerad tablett`, etc. The form itself is unchanged — strength is still free-text in this release.
+Off-catalog medicines (or values that aren't in the catalog) get two free-text fields instead: Strength (any string, e.g. `0,15 mg` or `100 IU`) and Form (e.g. `tablet`). Pick **Custom…** at the bottom of the dropdown to switch modes.
 
-## What's not changed yet
+The dose-display string follows: `1 pill × 5 mg Filmdragerad tablett = 5 mg`, `1 puff × 87 mikrogram/5 mikrogram/9 mikrogram Inhalationsspray`, `10 units × 100 E/ml Injektionsvätska`. The `= total mg` suffix only appears when the strength is a simple `<number> mg` — combos, concentrations, IUs etc. don't have a meaningful total to compute.
 
-This release is the data plumbing only. The strength input is still a free-text number with the legacy mg unit. The variant-driven dropdown that replaces it lands in v0.2.13 along with the prescription-level data model migration.
+## Migration
+
+Every existing prescription auto-migrates at integration setup. The legacy `unit_strength_mg: 5.0` becomes `variant_strength: "5 mg"` with empty form and NPL ID. Open Edit on any medicine and the dropdown shows `"5 mg (current)"` pre-selected — Save without changes preserves the value. Pick a real catalog variant from the dropdown to attach a form.
+
+`unit_strength_mg` stays on disk for this release as a downgrade safety net — anyone pausing the upgrade and rolling back to v0.2.12 reads the legacy value cleanly. It'll be removed at v1.0.0.
+
+`total_dose_mg` sensor attribute is now computed live — it stays populated for any mg-parseable variant (all migrated data + any mg variant you pick from the catalog) and becomes `unknown` for combo / IU / mL / % variants where the math doesn't apply.
 
 ## Upgrading
 
-Replace the `pillpilot` directory in `custom_components/` with the contents of this zip and restart Home Assistant. HACS users: update normally. Existing prescriptions are unaffected; the loader back-derives `npl_id` and `common_forms` from the new variants for any code path still reading the legacy fields.
-
-Stored medicine caches written by v0.2.11 (schema v1) auto-upgrade on first load — `_bundled_has_content_drift` now samples the variants field and force-loads the v2 bundle even though `list_version` stayed at `2026.05.10-1`.
+Replace the `pillpilot` directory in `custom_components/` with the contents of this zip and restart Home Assistant. HACS users: update normally. The migration runs once at setup; the log line to look for is `Migrated N medicine subentry/subentries to v0.2.13 variants`.

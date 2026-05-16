@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.13] — 2026-05-16
+
+Variant-driven strength selector. Drop-in upgrade from 0.2.12.
+
+- **Strength is now a catalog variant**, not a free-text mg number. Prescriptions store `variant_strength` (verbatim catalog string like `"5 mg"`, `"0,15 mg"`, `"100 E/ml"`, `"87 mikrogram/5 mikrogram/9 mikrogram"`), `variant_form` (e.g. `"Filmdragerad tablett"`), and `variant_npl_id` (pointer back to the catalog entry, or `null` for off-catalog medicines). The old `unit_strength_mg: float` field stays on disk for one release for downgrade safety — `# REMOVE AT v1.0.0`.
+- **Add/Edit prescription form rewritten.** When the medicine name matches a catalog entry, the Strength input becomes a dropdown of all variants. Each option reads `"5 mg — Filmdragerad tablett"`. A `Custom…` item at the bottom flips to two free-text fields (strength + form) for off-list values. When the name doesn't match the catalog at all, the form goes straight to the two-text-field path.
+- **Existing prescriptions auto-migrate to mg variants.** `_migrate_subentries_to_v0213_variants` synthesizes `variant_strength = f"{unit_strength_mg:g} mg"` for every prescription that pre-dates this release. `variant_form` and `variant_npl_id` are left empty so the user can pick the matching catalog variant on next edit if they want. Idempotent.
+- **Edit modal preserves migrated values.** When a prescription's `(variant_strength, variant_form)` doesn't match any catalog variant exactly (every migrated prescription has empty form, so this is everyone post-upgrade), the dropdown shows a synthetic `"5 mg (current)"` option at the top, pre-selected — Save without changes keeps the existing value.
+- **`total_dose_mg` sensor attribute now computed on the fly.** Returns the count×value product when `variant_strength` parses as `<number> mg` (matches all migrated data and every mg variant from the catalog). Returns `None` for combo / IU / mL / % variants — the math doesn't apply. Automations referencing `total_dose_mg` see `unknown` instead of a wrong number.
+- **Dose display rewritten.** Format goes from `"1 pill × 5 mg = 5 mg"` to `"1 pill × 5 mg Filmdragerad tablett = 5 mg"`. The `= total mg` suffix is dropped for non-mg variants since there's no meaningful total (`"1 puff × 87 mikrogram/5 mikrogram/9 mikrogram Inhalationsspray"`). Pure-count prescriptions with no variant data render as `"1 pill"`.
+- **Dose model rewrite** in `dose.py`. The `Dose` dataclass swaps `strength_mg: float` for `variant_strength: str` + `variant_form: str`; `total_mg` becomes an `Optional[float]` computed via regex against the strength string. Pure data model with no HA dependencies — still unit-testable in isolation.
+- **HA Settings reconfigure flow updated.** The `NumberSelector(unit_of_measurement="mg")` strength field is replaced with two text inputs: required `Strength` and optional `Form`. NPL ID auto-fill (from v0.2.11) still works.
+
 ## [0.2.12] — 2026-05-16
 
 Catalog schema v2 — per-medicine variants. Drop-in upgrade from 0.2.11.

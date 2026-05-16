@@ -23,8 +23,20 @@ CONF_MED_PERSON = "person_id"          # entity_id like "person.alice", or None 
 # Medicine type and structured dosage
 CONF_MED_TYPE = "med_type"                       # "pill" | "drops" | "injection"
 CONF_MED_UNIT_COUNT = "unit_count"               # number of pills/drops/injections per dose
-CONF_MED_UNIT_STRENGTH_MG = "unit_strength_mg"   # mg per pill/drop/injection
-CONF_MED_TOTAL_DOSE_MG = "total_dose_mg"         # computed: count * strength
+CONF_MED_UNIT_STRENGTH_MG = "unit_strength_mg"   # legacy mg-only strength, REMOVE AT v1.0.0
+CONF_MED_TOTAL_DOSE_MG = "total_dose_mg"         # legacy sensor attr name, kept as derived
+
+# v0.2.13: variant-aware strength. The user picks a variant from
+# medicines_se.json (or types free-text strength + form when off
+# catalog). Strength is stored as the verbatim catalog string
+# ("5 mg", "100 E/ml", "87 mikrogram/5 mikrogram/9 mikrogram") —
+# never reparsed into a number+unit, so combo / IU / concentration
+# variants all round-trip cleanly. ``total_dose_mg`` is computed on
+# the fly when ``variant_strength`` matches ``<number> mg``; None
+# otherwise.
+CONF_MED_VARIANT_STRENGTH = "variant_strength"   # e.g. "5 mg"
+CONF_MED_VARIANT_FORM = "variant_form"           # e.g. "Filmdragerad tablett"
+CONF_MED_VARIANT_NPL_ID = "variant_npl_id"       # pointer back to the catalog variant
 
 MED_TYPE_PILL = "pill"
 MED_TYPE_DROPS = "drops"

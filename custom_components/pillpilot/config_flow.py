@@ -75,6 +75,9 @@ from .const import (
     CONF_MED_TYPE,
     CONF_MED_UNIT_COUNT,
     CONF_MED_UNIT_STRENGTH_MG,
+    CONF_MED_VARIANT_FORM,
+    CONF_MED_VARIANT_NPL_ID,
+    CONF_MED_VARIANT_STRENGTH,
     CONF_MED_VARUNUMMER,
     CONF_MEDICINES_DB_REFRESH_NOW,
     CONF_MEDICINES_DB_URL,
@@ -308,7 +311,12 @@ def validate_medicine_input(
         dose = Dose(
             med_type=user_input[CONF_MED_TYPE],
             count=float(user_input[CONF_MED_UNIT_COUNT]),
-            strength_mg=float(user_input[CONF_MED_UNIT_STRENGTH_MG]),
+            variant_strength=str(
+                user_input.get(CONF_MED_VARIANT_STRENGTH) or ""
+            ),
+            variant_form=str(
+                user_input.get(CONF_MED_VARIANT_FORM) or ""
+            ),
         )
     except (KeyError, TypeError, ValueError):
         return None, {CONF_MED_UNIT_COUNT: "invalid_number"}
@@ -470,8 +478,15 @@ def validate_medicine_input(
         CONF_PRESCRIPTION_ID: uuid.uuid4().hex,
         CONF_MED_PERSON: person_id,
         CONF_MED_UNIT_COUNT: dose.count,
-        CONF_MED_UNIT_STRENGTH_MG: dose.strength_mg,
-        CONF_MED_TOTAL_DOSE_MG: dose.total_mg,
+        CONF_MED_VARIANT_STRENGTH: dose.variant_strength,
+        CONF_MED_VARIANT_FORM: dose.variant_form,
+        CONF_MED_VARIANT_NPL_ID: (
+            user_input.get(CONF_MED_VARIANT_NPL_ID) or None
+        ),
+        # Legacy mg fields written alongside for downgrade safety
+        # (a v0.2.12 install can still read these). REMOVE AT v1.0.0.
+        CONF_MED_UNIT_STRENGTH_MG: (dose.total_mg or 0.0) / max(dose.count, 1),
+        CONF_MED_TOTAL_DOSE_MG: dose.total_mg or 0.0,
         CONF_MED_DOSE: dose_text,
         CONF_MED_RRULE: rrule_str,
         CONF_MED_SCHEDULE_TYPE: schedule_type,
@@ -738,7 +753,10 @@ def validate_medicine_input_multi(
                 dose = Dose(
                     med_type=med_type,
                     count=float(p.get(CONF_MED_UNIT_COUNT, 0)),
-                    strength_mg=float(p.get(CONF_MED_UNIT_STRENGTH_MG, 0)),
+                    variant_strength=str(
+                        p.get(CONF_MED_VARIANT_STRENGTH) or ""
+                    ),
+                    variant_form=str(p.get(CONF_MED_VARIANT_FORM) or ""),
                 )
             except (KeyError, TypeError, ValueError):
                 p_errors[CONF_MED_UNIT_COUNT] = "invalid_number"
@@ -862,8 +880,12 @@ def validate_medicine_input_multi(
             CONF_PRESCRIPTION_ID: p.get(CONF_PRESCRIPTION_ID) or uuid.uuid4().hex,
             CONF_MED_PERSON: p.get(CONF_MED_PERSON) or None,
             CONF_MED_UNIT_COUNT: dose.count,
-            CONF_MED_UNIT_STRENGTH_MG: dose.strength_mg,
-            CONF_MED_TOTAL_DOSE_MG: dose.total_mg,
+            CONF_MED_VARIANT_STRENGTH: dose.variant_strength,
+            CONF_MED_VARIANT_FORM: dose.variant_form,
+            CONF_MED_VARIANT_NPL_ID: p.get(CONF_MED_VARIANT_NPL_ID) or None,
+            # Legacy mg fields for downgrade safety. REMOVE AT v1.0.0.
+            CONF_MED_UNIT_STRENGTH_MG: (dose.total_mg or 0.0) / max(dose.count, 1),
+            CONF_MED_TOTAL_DOSE_MG: dose.total_mg or 0.0,
             CONF_MED_DOSE: dose.formatted(),
             CONF_MED_RRULE: rrule_str,
             CONF_MED_SCHEDULE_TYPE: schedule_type,
@@ -1400,7 +1422,14 @@ class MedicineSubentryFlow(ConfigSubentryFlow):
             CONF_MED_NAME: existing.get(CONF_MED_NAME) or "",
             CONF_MED_TYPE: existing.get(CONF_MED_TYPE) or MED_TYPE_PILL,
             CONF_MED_UNIT_COUNT: first.get(CONF_MED_UNIT_COUNT) or 1,
-            CONF_MED_UNIT_STRENGTH_MG: first.get(CONF_MED_UNIT_STRENGTH_MG) or 10.0,
+            CONF_MED_VARIANT_STRENGTH: first.get(CONF_MED_VARIANT_STRENGTH)
+            or (
+                f"{first.get(CONF_MED_UNIT_STRENGTH_MG):g} mg"
+                if first.get(CONF_MED_UNIT_STRENGTH_MG)
+                else ""
+            ),
+            CONF_MED_VARIANT_FORM: first.get(CONF_MED_VARIANT_FORM) or "",
+            CONF_MED_VARIANT_NPL_ID: first.get(CONF_MED_VARIANT_NPL_ID) or "",
             CONF_MED_NOTES: existing.get(CONF_MED_NOTES) or "",
             CONF_MED_NPL_ID: existing.get(CONF_MED_NPL_ID) or "",
             CONF_MED_VARUNUMMER: existing.get(CONF_MED_VARUNUMMER) or "",
@@ -1479,17 +1508,17 @@ class MedicineSubentryFlow(ConfigSubentryFlow):
                                 )
                             ),
                             vol.Required(
-                                CONF_MED_UNIT_STRENGTH_MG,
-                                default=defaults[CONF_MED_UNIT_STRENGTH_MG],
-                            ): NumberSelector(
-                                NumberSelectorConfig(
-                                    min=0.001,
-                                    max=100000,
-                                    step=0.001,
-                                    mode=NumberSelectorMode.BOX,
-                                    unit_of_measurement="mg",
-                                )
-                            ),
+                                CONF_MED_VARIANT_STRENGTH,
+                                default=defaults[CONF_MED_VARIANT_STRENGTH],
+                            ): str,
+                            vol.Optional(
+                                CONF_MED_VARIANT_FORM,
+                                default=defaults[CONF_MED_VARIANT_FORM],
+                            ): str,
+                            vol.Optional(
+                                CONF_MED_VARIANT_NPL_ID,
+                                default=defaults[CONF_MED_VARIANT_NPL_ID],
+                            ): str,
                             vol.Optional(
                                 CONF_MED_NOTES, default=defaults[CONF_MED_NOTES]
                             ): str,

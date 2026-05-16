@@ -41,10 +41,11 @@ from .const import (
     CONF_MED_SCHEDULE_TYPE,
     CONF_MED_TIMES,
     CONF_MED_TIMES_PER_WEEKDAY,
-    CONF_MED_TOTAL_DOSE_MG,
     CONF_MED_TYPE,
     CONF_MED_UNIT_COUNT,
-    CONF_MED_UNIT_STRENGTH_MG,
+    CONF_MED_VARIANT_FORM,
+    CONF_MED_VARIANT_NPL_ID,
+    CONF_MED_VARIANT_STRENGTH,
     CONF_MED_VARUNUMMER,
     CONF_MEDICINES,
     CONF_PRESCRIPTION_ID,
@@ -76,6 +77,7 @@ from .const import (
 )
 from .sources import LookupKey, LookupResult, MedicineSource
 from .schedule import Schedule, rrule_to_friendly
+from .dose import Dose
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -118,8 +120,10 @@ class PrescriptionState:
     person_name: str | None
     dose: str
     unit_count: float
-    unit_strength_mg: float
-    total_dose_mg: float
+    variant_strength: str
+    variant_form: str
+    variant_npl_id: str | None
+    total_dose_mg: float | None
     frequency: str
     times: list[str]
     days: list[int]
@@ -187,14 +191,28 @@ class MedicineState:
         return self.prescriptions[0].unit_count if self.prescriptions else 0.0
 
     @property
-    def unit_strength_mg(self) -> float:
+    def variant_strength(self) -> str:
         return (
-            self.prescriptions[0].unit_strength_mg if self.prescriptions else 0.0
+            self.prescriptions[0].variant_strength if self.prescriptions else ""
         )
 
     @property
-    def total_dose_mg(self) -> float:
-        return self.prescriptions[0].total_dose_mg if self.prescriptions else 0.0
+    def variant_form(self) -> str:
+        return (
+            self.prescriptions[0].variant_form if self.prescriptions else ""
+        )
+
+    @property
+    def variant_npl_id(self) -> str | None:
+        return (
+            self.prescriptions[0].variant_npl_id if self.prescriptions else None
+        )
+
+    @property
+    def total_dose_mg(self) -> float | None:
+        return (
+            self.prescriptions[0].total_dose_mg if self.prescriptions else None
+        )
 
     @property
     def frequency(self) -> str:
@@ -807,18 +825,36 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         # Pass through verbatim to the WS — panel reads it as JSON.
         derived_tpw = prescription.get(CONF_MED_TIMES_PER_WEEKDAY)
 
+        unit_count = float(prescription.get(CONF_MED_UNIT_COUNT) or 0.0)
+        variant_strength = str(
+            prescription.get(CONF_MED_VARIANT_STRENGTH) or ""
+        )
+        variant_form = str(prescription.get(CONF_MED_VARIANT_FORM) or "")
+        variant_npl_id_raw = prescription.get(CONF_MED_VARIANT_NPL_ID)
+        variant_npl_id = (
+            str(variant_npl_id_raw) if variant_npl_id_raw else None
+        )
+        # v0.2.13: total_dose_mg computed on the fly via the Dose
+        # model. None for combo / IU / concentration variants where
+        # the math doesn't apply.
+        dose_obj = Dose(
+            med_type=prescription.get(CONF_MED_TYPE) or "",
+            count=unit_count,
+            variant_strength=variant_strength,
+            variant_form=variant_form,
+        )
+        total_dose_mg = dose_obj.total_mg
+
         return PrescriptionState(
             id=prescription.get(CONF_PRESCRIPTION_ID, ""),
             person_id=person_id,
             person_name=person_name,
             dose=prescription.get(CONF_MED_DOSE, ""),
-            unit_count=float(prescription.get(CONF_MED_UNIT_COUNT) or 0.0),
-            unit_strength_mg=float(
-                prescription.get(CONF_MED_UNIT_STRENGTH_MG) or 0.0
-            ),
-            total_dose_mg=float(
-                prescription.get(CONF_MED_TOTAL_DOSE_MG) or 0.0
-            ),
+            unit_count=unit_count,
+            variant_strength=variant_strength,
+            variant_form=variant_form,
+            variant_npl_id=variant_npl_id,
+            total_dose_mg=total_dose_mg,
             frequency=derived_frequency,
             times=list(prescription.get(CONF_MED_TIMES, [])),
             days=list(derived_days),

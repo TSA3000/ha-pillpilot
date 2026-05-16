@@ -2374,12 +2374,16 @@ class PillPilotPanel extends HTMLElement {
   // comma string; days are stringified into a Set; days_of_month
   // joined into a comma string.
   _prescriptionDraftFromAttr(p) {
+    // v0.2.13: variant fields. Pre-migration data on the server side
+    // is normalized to variant_strength="{n} mg" before we see it,
+    // so this path doesn't need to read unit_strength_mg at all.
     return {
       id: p.id || "",
       person: p.person_id || "",
       unit_count: p.unit_count != null ? String(p.unit_count) : "1",
-      unit_strength_mg:
-        p.unit_strength_mg != null ? String(p.unit_strength_mg) : "0",
+      variant_strength: p.variant_strength || "",
+      variant_form: p.variant_form || "",
+      variant_npl_id: p.variant_npl_id || "",
       frequency: p.frequency || "daily",
       times: (p.scheduled_times || []).join(", "),
       daysOfWeek: new Set(
@@ -2437,7 +2441,9 @@ class PillPilotPanel extends HTMLElement {
       id: "",
       person: "",
       unit_count: "1",
-      unit_strength_mg: "0",
+      variant_strength: "",
+      variant_form: "",
+      variant_npl_id: "",
       frequency: "daily",
       times: "",
       daysOfWeek: new Set(),
@@ -2469,7 +2475,9 @@ class PillPilotPanel extends HTMLElement {
       const wire = {
         person_id: p.person || null,
         unit_count: numOrDefault(p.unit_count, parseFloat, 0),
-        unit_strength_mg: numOrDefault(p.unit_strength_mg, parseFloat, 0),
+        variant_strength: (p.variant_strength || "").trim(),
+        variant_form: (p.variant_form || "").trim(),
+        variant_npl_id: (p.variant_npl_id || "").trim() || null,
         frequency: p.frequency,
         times: (p.times || "").trim(),
         days: Array.from(p.daysOfWeek).sort((a, b) => parseInt(a) - parseInt(b)),
@@ -2942,29 +2950,40 @@ class PillPilotPanel extends HTMLElement {
   }
 
   // Single line summarizing a prescription for the row display.
-  // Format: "{dose} · {schedule}". Dose computed inline from
-  // unit_count/unit_strength_mg (no need for backend round-trip).
+  // Format: "{dose} · {schedule}". v0.2.13: dose composed from
+  // unit_count + variant_strength + variant_form, with "= total mg"
+  // appended only when variant_strength parses as <number> mg
+  // (matches the server-side Dose.total_mg logic — combos, IUs and
+  // concentrations stay as "{count} × {variant_strength} {form}").
   _formatPrescriptionDraftSummary(p) {
     const count = parseFloat(p.unit_count);
-    const strength = parseFloat(p.unit_strength_mg);
-    const total = !Number.isNaN(count) && !Number.isNaN(strength)
-      ? count * strength
-      : null;
-    // Unit label derives from the drug's TYPE, not the prescription's
-    // frequency. (frequency is daily/weekly/monthly — never matches a
-    // type string. The previous code always returned "pill" by accident.)
     const drugType =
       (this._editFormDraft && this._editFormDraft.drug && this._editFormDraft.drug.type) ||
       MED_TYPE_PILL;
-    const unit = drugType === MED_TYPE_INJECTION ? "injection"
-               : drugType === MED_TYPE_DROPS     ? "drop"
-               : "pill";
+    const unitWord =
+      drugType === MED_TYPE_INJECTION ? "injection"
+      : drugType === MED_TYPE_DROPS ? "drop"
+      : "pill";
+    const unitLabel = count === 1 ? unitWord : `${unitWord}s`;
+    const strength = (p.variant_strength || "").trim();
+    const form = (p.variant_form || "").trim();
     let dosePart;
-    if (total != null) {
-      const countLabel = (count === 1 ? `${count} ${unit}` : `${count} ${unit}s`);
-      dosePart = `${countLabel} × ${strength} mg = ${total} mg`;
-    } else {
+    if (Number.isNaN(count)) {
       dosePart = "?";
+    } else if (!strength && !form) {
+      dosePart = `${count} ${unitLabel}`;
+    } else {
+      const desc = [strength, form].filter(Boolean).join(" ");
+      const mgMatch = strength.match(/^\s*(\d+(?:[.,]\d+)?)\s*mg\s*$/i);
+      let tail = "";
+      if (mgMatch) {
+        const mgValue = parseFloat(mgMatch[1].replace(",", "."));
+        if (!Number.isNaN(mgValue)) {
+          const total = count * mgValue;
+          tail = ` = ${total % 1 === 0 ? total : total.toFixed(3).replace(/\.?0+$/, "")} mg`;
+        }
+      }
+      dosePart = `${count} ${unitLabel} × ${desc}${tail}`;
     }
     // Convert the draft's daysOfWeek Set + daysOfMonth string + times
     // string into the same shape _formatSchedule expects.
@@ -3089,6 +3108,79 @@ class PillPilotPanel extends HTMLElement {
     const showMonthly = draft.frequency === "monthly";
     const showInterval = draft.frequency === "interval";
 
+    // v0.2.13: variant strength input. When the parent modal's
+    // medicine name matches a catalog entry, render a dropdown of
+    // its variants ("5 mg — Filmdragerad tablett", etc.) plus
+    // synthetic "(current)" and "Custom…" options. When custom is
+    // active (off-catalog medicine, or user-picked custom), show
+    // two free-text fields (strength + form).
+    const drugName =
+      (this._editFormDraft && this._editFormDraft.drug && this._editFormDraft.drug.name) || "";
+    const catalogHit = this._lookupMedNameOrAlias(drugName);
+    const catalogVariants =
+      catalogHit && Array.isArray(catalogHit.variants)
+        ? catalogHit.variants.filter(
+            (v) => (v.strength || "").trim() || (v.form || "").trim()
+          )
+        : [];
+    const currentStrength = (draft.variant_strength || "").trim();
+    const currentForm = (draft.variant_form || "").trim();
+    const variantKey = (s, f) => `${s}\u0000${f}`;
+    const currentKey = variantKey(currentStrength, currentForm);
+    const matchedVariant = catalogVariants.find(
+      (v) => variantKey((v.strength || "").trim(), (v.form || "").trim()) === currentKey
+    );
+    const customActive = !!draft.variant_custom;
+    // The dropdown is shown when the catalog has variants for the
+    // medicine. The user-typed custom path activates either when
+    // (a) no catalog variants exist, or (b) the user explicitly
+    // picks Custom from the dropdown (sets draft.variant_custom),
+    // or (c) the existing prescription doesn't match any variant
+    // — pre-selecting "(current)" still shows the dropdown but
+    // labels the current value.
+    let strengthInputHtml;
+    if (catalogVariants.length === 0 || customActive) {
+      strengthInputHtml = `
+        <label class="form-field">
+          <span class="form-label">Strength *</span>
+          <input type="text" class="form-input" data-sub-field="variant_strength" value="${escapeHtml(currentStrength)}" placeholder="e.g. 5 mg">
+          ${fieldError("variant_strength")}
+        </label>
+        <label class="form-field">
+          <span class="form-label">Form</span>
+          <input type="text" class="form-input" data-sub-field="variant_form" value="${escapeHtml(currentForm)}" placeholder="e.g. Filmdragerad tablett">
+        </label>
+      `;
+    } else {
+      const options = [];
+      if (currentStrength && !matchedVariant) {
+        const label = currentForm
+          ? `${currentStrength} — ${currentForm} (current)`
+          : `${currentStrength} (current)`;
+        options.push(
+          `<option value="__current__" selected>${escapeHtml(label)}</option>`
+        );
+      }
+      catalogVariants.forEach((v) => {
+        const s = (v.strength || "").trim();
+        const f = (v.form || "").trim();
+        const label = s && f ? `${s} — ${f}` : s || f;
+        const value = `${s}|${f}`;
+        const isMatch = matchedVariant === v;
+        options.push(
+          `<option value="${escapeHtml(value)}" ${isMatch ? "selected" : ""}>${escapeHtml(label)}</option>`
+        );
+      });
+      options.push(`<option value="__custom__">Custom…</option>`);
+      strengthInputHtml = `
+        <label class="form-field">
+          <span class="form-label">Strength *</span>
+          <select class="form-input" data-sub-field="variant_select">${options.join("")}</select>
+          ${fieldError("variant_strength")}
+        </label>
+      `;
+    }
+
     return `
       <div class="modal-overlay sub-modal-overlay" data-action="close-sub-modal">
         <div class="modal-card sub-modal-card" data-action="modal-stop">
@@ -3114,10 +3206,7 @@ class PillPilotPanel extends HTMLElement {
                   <input type="number" min="0.1" step="0.1" class="form-input" data-sub-field="unit_count" value="${escapeHtml(draft.unit_count)}">
                   ${fieldError("unit_count")}
                 </label>
-                <label class="form-field">
-                  <span class="form-label">Strength (mg) *</span>
-                  <input type="number" min="0" step="0.001" class="form-input" data-sub-field="unit_strength_mg" value="${escapeHtml(draft.unit_strength_mg)}">
-                </label>
+                ${strengthInputHtml}
               </div>
             </div>
 
@@ -3506,6 +3595,25 @@ class PillPilotPanel extends HTMLElement {
           }
           if (idx >= 0 && idx <= 6) {
             draft.timesPerWeekday[idx] = e.currentTarget.value;
+          }
+        } else if (field === "variant_select") {
+          // v0.2.13: variant dropdown. Value is either "{strength}|{form}"
+          // for a real catalog variant, "__current__" for the
+          // synthetic "(current)" placeholder (no-op, keeps draft
+          // strength/form as-is), or "__custom__" to flip into the
+          // two-text-field free-text path.
+          const value = e.currentTarget.value;
+          if (value === "__custom__") {
+            draft.variant_custom = true;
+            this._render();
+          } else if (value === "__current__") {
+            // no-op — keeps existing variant_strength/form
+          } else {
+            const [strength, form] = value.split("|");
+            draft.variant_strength = strength || "";
+            draft.variant_form = form || "";
+            draft.variant_npl_id = "";
+            this._render();
           }
         } else {
           const value = e.currentTarget.value;

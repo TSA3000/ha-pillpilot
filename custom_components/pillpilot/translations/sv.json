@@ -54,7 +54,7 @@
                 "name": "Medicinnamn (sök eller skriv)",
                 "med_type": "Medicintyp",
                 "unit_count": "Antal per dos (tabletter / droppar / injektioner)",
-                "unit_strength_mg": "Styrka per enhet",
+                "variant_strength": "Styrka", "variant_form": "Form", "variant_npl_id": "Variant NPL ID",
                 "notes": "Anteckningar",
                 "person_id": "Person (valfritt — lämna tomt för hushåll)"
               }
@@ -110,7 +110,7 @@
                 "name": "Medicinnamn (sök eller skriv)",
                 "med_type": "Medicintyp",
                 "unit_count": "Antal per dos (tabletter / droppar / injektioner)",
-                "unit_strength_mg": "Styrka per enhet",
+                "variant_strength": "Styrka", "variant_form": "Form", "variant_npl_id": "Variant NPL ID",
                 "notes": "Anteckningar",
                 "person_id": "Person (valfritt — lämna tomt för hushåll)"
               }
