@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.18] — 2026-05-17
+
+- New `Managers` config option in the install and reconfigure flows: multi-select of HA users authorized to create / edit / delete medicines from the panel. Built dynamically from `hass.auth.async_get_users()` with role hints (`(owner)` / `(admin)` / `(user)`) in each label.
+- Owner always has manager rights regardless of the list, gated explicitly via `user.is_owner`. Owner is pre-checked in the selector for visual confirmation; owner_id is stripped from the stored list on save so the stored list semantically represents *additional* managers only.
+- Empty stored list = every admin can manage. Matches the `@websocket_api.require_admin` behavior used through v0.2.17 and stays the default for installs that don't touch the new field. Non-empty stored list switches to allowlist mode: only the owner and listed users can mutate.
+- The three mutating WS commands (`pillpilot/create_medicine`, `pillpilot/update_medicine`, `pillpilot/delete_medicine`) swap `@websocket_api.require_admin` for a new `@_require_manager` decorator backed by `_is_pillpilot_manager(user)`.
+- `CONF_MANAGERS` added to `_RELOAD_REQUIRING_KEYS` so changes take effect on save without a HA restart.
+
 ## [0.2.17] — 2026-05-17
 
 - Moved Take missed from the kebab `⋮` menu to a top-level button in the per-person header, next to Take all and Take due. Renamed from "Take missed today" to "Take missed" to match siblings. Handler `_takeMissedForPerson` unchanged.

@@ -179,3 +179,17 @@ PANEL_VISIBILITY_OPTIONS = [
     PANEL_VIS_ADMINS,
     PANEL_VIS_HIDDEN,
 ]
+
+# ---------------------------------------------------------------------------
+# Manager allowlist (added in v0.2.18)
+#
+# Stored in entry.data[CONF_MANAGERS] as a list of HA user_ids.
+# Mutating WS commands (create / update / delete medicine) check membership.
+#
+# Empty list = backward-compat: every admin can manage (matches the old
+# @websocket_api.require_admin behavior). Non-empty list = only owner +
+# listed users can manage. Owner is always implicitly a manager regardless
+# of the list contents (HA's permission system bypasses every check for
+# owner anyway, so an explicit user.is_owner check is the source of truth).
+# ---------------------------------------------------------------------------
+CONF_MANAGERS = "managers"

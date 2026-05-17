@@ -6,10 +6,12 @@
         "description": "Choose how the PillPilot panel appears in the sidebar, and where the medicine name autocomplete list comes from. You can change both later via Reconfigure.",
         "data": {
           "panel_visibility": "Sidebar panel",
+          "managers": "Managers",
           "medicines_db_url": "Medicine list URL"
         },
         "data_description": {
           "panel_visibility": "Controls whether the PillPilot sidebar entry appears. Each user can independently hide it from their own sidebar via Profile → Edit sidebar regardless of this setting.",
+          "managers": "HA users who can create, edit, and delete medicines from the panel. The owner is always implicitly a manager regardless of this list. Empty list = every admin can manage (default, matches pre-v0.2.18 behavior).",
           "medicines_db_url": "URL the integration pulls the medicine name list from when you click Refresh. The default points at the upstream community list. If you maintain your own fork, paste the raw GitHub URL of your medicines_se.json here."
         }
       },
@@ -18,11 +20,13 @@
         "description": "Currently loaded medicine list: version {list_version} ({list_count} medicines). Toggle 'Refresh medicine list now' to pull the latest version from the URL below.",
         "data": {
           "panel_visibility": "Sidebar panel",
+          "managers": "Managers",
           "medicines_db_url": "Medicine list URL",
           "refresh_medicines_now": "Refresh medicine list now"
         },
         "data_description": {
           "panel_visibility": "Controls whether the PillPilot sidebar entry appears. Each user can independently hide it from their own sidebar via Profile → Edit sidebar regardless of this setting.",
+          "managers": "HA users who can create, edit, and delete medicines from the panel. The owner is always implicitly a manager regardless of this list. Empty list = every admin can manage (default, matches pre-v0.2.18 behavior).",
           "medicines_db_url": "URL the integration pulls the medicine name list from when you click Refresh. The default points at the upstream community list. If you maintain your own fork, paste the raw GitHub URL of your medicines_se.json here.",
           "refresh_medicines_now": "Check this and submit to fetch a fresh medicine list from the URL above. The toggle is one-shot — it clears itself after the refresh runs."
         }

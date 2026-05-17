@@ -6,10 +6,12 @@
         "description": "Välj hur PillPilot-panelen visas i sidopanelen och var listan med medicinnamn för autokomplettering hämtas ifrån. Båda kan ändras senare via Konfigurera om.",
         "data": {
           "panel_visibility": "Sidopanel",
+          "managers": "HA-användare som får skapa, redigera och ta bort mediciner från panelen. Ägaren är alltid implicit hanterare oavsett denna lista. Tom lista = varje administratör är hanterare (standard, matchar beteendet före v0.2.18).",
           "medicines_db_url": "URL för medicinlistan"
         },
         "data_description": {
           "panel_visibility": "Styr om PillPilot-genvägen visas i sidopanelen. Varje användare kan dölja den för sig själv via Profil → Redigera sidopanel oavsett detta val.",
+          "managers": "HA-användare som får skapa, redigera och ta bort mediciner från panelen. Ägaren är alltid implicit hanterare oavsett denna lista. Tom lista = varje administratör är hanterare (standard, matchar beteendet före v0.2.18).",
           "medicines_db_url": "URL som integrationen hämtar medicinnamnslistan från när du klickar på Uppdatera. Standard pekar på den gemensamma listan i upstream-repot. Om du har en egen fork klistrar du in raw-URL:en till din medicines_se.json här."
         }
       },

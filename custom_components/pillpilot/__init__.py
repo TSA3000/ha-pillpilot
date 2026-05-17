@@ -1,6 +1,7 @@
 """The PillPilot integration."""
 from __future__ import annotations
 
+import functools
 import logging
 from datetime import datetime
 from typing import Any
@@ -14,6 +15,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
+    CONF_MANAGERS,
     CONF_MED_ATC_CODE,
     CONF_MED_ID,
     CONF_MED_NAME,
@@ -377,9 +379,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 # Settings whose change *requires* a full entry reload (re-registers
 # panel, etc.). Everything else can be picked up by the coordinator
-# without unloading. As of v0.2.14 only panel visibility qualifies —
-# all source-related keys were removed.
-_RELOAD_REQUIRING_KEYS = (CONF_PANEL_VISIBILITY,)
+# without unloading. v0.2.18 adds CONF_MANAGERS — switching the
+# allowlist needs the WS handler's resolved entry to be re-read.
+_RELOAD_REQUIRING_KEYS = (CONF_PANEL_VISIBILITY, CONF_MANAGERS)
 
 
 def _reload_keys_snapshot(entry: ConfigEntry) -> tuple:
@@ -728,6 +730,57 @@ def _register_services(hass: HomeAssistant) -> None:
 # WS command uses the multi-prescription shape.
 
 
+# ---------------------------------------------------------------------------
+# Manager allowlist (v0.2.18)
+# ---------------------------------------------------------------------------
+#
+# Mutating WS commands (create / update / delete medicine) are gated on
+# membership in the PillPilot manager set. The set is:
+#   * Owner always (HA's permission system bypasses every check for
+#     the owner regardless; matched here via user.is_owner so the
+#     intent is explicit at this layer).
+#   * Plus the user_ids listed in entry.data[CONF_MANAGERS].
+#   * If the list is empty (default for pre-v0.2.18 installs), every
+#     HA admin is implicitly a manager — matches the @require_admin
+#     behavior used through v0.2.17.
+#
+# Read-only commands (pillpilot/get_medicines_db) are not gated.
+
+
+def _is_pillpilot_manager(hass: HomeAssistant, user) -> bool:
+    """Owner always passes. Otherwise: user_id in the allowlist,
+    or (empty allowlist) any admin."""
+    if user is None:
+        return False
+    if user.is_owner:
+        return True
+    managers: list[str] = []
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        m = entry.data.get(CONF_MANAGERS) or []
+        if m:
+            managers = list(m)
+            break
+    if not managers:
+        return bool(user.is_admin)
+    return user.id in managers
+
+
+def _require_manager(func):
+    """WS decorator: gate handler on PillPilot manager rights. Applies
+    after @websocket_api.async_response, matching the stacking used by
+    HA's own @websocket_api.require_admin."""
+    @functools.wraps(func)
+    async def wrapped(
+        hass: HomeAssistant,
+        connection: websocket_api.ActiveConnection,
+        msg: dict,
+    ) -> None:
+        if not _is_pillpilot_manager(hass, connection.user):
+            raise Unauthorized()
+        return await func(hass, connection, msg)
+    return wrapped
+
+
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "pillpilot/update_medicine",
@@ -735,7 +788,7 @@ def _register_services(hass: HomeAssistant) -> None:
         vol.Required("data"): dict,
     }
 )
-@websocket_api.require_admin
+@_require_manager
 @websocket_api.async_response
 async def _ws_update_medicine(
     hass: HomeAssistant,
@@ -844,7 +897,7 @@ async def _ws_update_medicine(
         vol.Required("data"): dict,
     }
 )
-@websocket_api.require_admin
+@_require_manager
 @websocket_api.async_response
 async def _ws_create_medicine(
     hass: HomeAssistant,
@@ -939,7 +992,7 @@ async def _ws_create_medicine(
         vol.Required("medicine_id"): cv.string,
     }
 )
-@websocket_api.require_admin
+@_require_manager
 @websocket_api.async_response
 async def _ws_delete_medicine(
     hass: HomeAssistant,

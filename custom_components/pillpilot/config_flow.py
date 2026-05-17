@@ -3,11 +3,10 @@
 The integration ships two flow handlers:
 
   * ``PillPilotConfigFlow`` (subclass of ``ConfigFlow``) — runs once
-    when the user first adds the integration. As of v0.2.14 the only
-    parent-level setting is the sidebar panel visibility (the data
-    sources VARA / FASS-API / RMS were removed; future v0.2.16 FASS
-    web-link enrichment is configured per-medicine). Users can revisit
-    panel visibility later via Reconfigure without removing the entry.
+    when the user first adds the integration. Parent-level settings:
+    sidebar panel visibility, the Managers allowlist (v0.2.18), and
+    the medicines DB URL. Users can revisit any of these later via
+    Reconfigure without removing the entry.
 
   * ``MedicineSubentryFlow`` (subclass of ``ConfigSubentryFlow``) —
     runs every time the user clicks the "Add medicine" button on the
@@ -43,6 +42,7 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
@@ -81,6 +81,7 @@ from .const import (
     CONF_MED_VARUNUMMER,
     CONF_MEDICINES_DB_REFRESH_NOW,
     CONF_MEDICINES_DB_URL,
+    CONF_MANAGERS,
     CONF_PANEL_VISIBILITY,
     DEFAULT_PANEL_VISIBILITY,
     DEFAULT_REMIND_WINDOW,
@@ -124,6 +125,37 @@ from .schedule import rrule_to_friendly, schedule_to_rrule
 # normalize "9:00" → "09:00" so downstream code (cron equivalent,
 # display, sorting) can rely on a single canonical format.
 _HHMM_RE = re.compile(r"^([01]?\d|2[0-3]):[0-5]\d$")
+
+
+async def _build_manager_options(
+    hass,
+) -> tuple[list[SelectOptionDict], str | None]:
+    """Return ``(options, owner_id)`` for the Managers selector.
+
+    ``hass.auth.async_get_users()`` returns every HA user. Skips
+    system-generated users (the supervisor user, etc.) and labels
+    each entry with the user's name plus role hint
+    (" (owner)" / " (admin)" / " (user)"). The owner_id is returned
+    separately so the caller can pre-check it in the form's default
+    value and strip it from the saved list.
+    """
+    options: list[SelectOptionDict] = []
+    owner_id: str | None = None
+    users = await hass.auth.async_get_users()
+    for user in users:
+        if user.system_generated:
+            continue
+        if user.is_owner:
+            role = "owner"
+            owner_id = user.id
+        elif user.is_admin:
+            role = "admin"
+        else:
+            role = "user"
+        label = f"{user.name or user.id} ({role})"
+        options.append(SelectOptionDict(value=user.id, label=label))
+    options.sort(key=lambda o: o["label"].lower())
+    return options, owner_id
 
 
 def _normalize_times(times_iter) -> tuple[list[str], str | None]:
@@ -1095,15 +1127,27 @@ class PillPilotConfigFlow(ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
 
+        manager_options, owner_id = await _build_manager_options(self.hass)
+
         if user_input is not None:
             self._draft[CONF_PANEL_VISIBILITY] = user_input.get(
                 CONF_PANEL_VISIBILITY, DEFAULT_PANEL_VISIBILITY
             )
+            # Owner is implicitly a manager via user.is_owner; strip from
+            # the stored list so an empty stored list correctly means
+            # "no allowlist, every admin manages" rather than the
+            # surprise outcome of "only owner manages" when the user
+            # just confirms the pre-checked default.
+            managers_selected = list(user_input.get(CONF_MANAGERS) or [])
+            if owner_id and owner_id in managers_selected:
+                managers_selected = [u for u in managers_selected if u != owner_id]
+            self._draft[CONF_MANAGERS] = managers_selected
             self._draft[CONF_MEDICINES_DB_URL] = (
                 user_input.get(CONF_MEDICINES_DB_URL) or DEFAULT_MEDICINES_DB_URL
             )
             return self._finish()
 
+        default_managers = [owner_id] if owner_id else []
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
@@ -1116,6 +1160,16 @@ class PillPilotConfigFlow(ConfigFlow, domain=DOMAIN):
                             options=PANEL_VISIBILITY_OPTIONS,
                             translation_key="panel_visibility",
                             mode=SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_MANAGERS,
+                        default=default_managers,
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=manager_options,
+                            multiple=True,
+                            mode=SelectSelectorMode.LIST,
                         )
                     ),
                     vol.Optional(
@@ -1159,10 +1213,17 @@ class PillPilotConfigFlow(ConfigFlow, domain=DOMAIN):
         """
         existing = self._get_reconfigure_entry()
         self._draft = dict(existing.data)
+        manager_options, owner_id = await _build_manager_options(self.hass)
+
         if user_input is not None:
             self._draft[CONF_PANEL_VISIBILITY] = user_input.get(
                 CONF_PANEL_VISIBILITY, DEFAULT_PANEL_VISIBILITY
             )
+            managers_selected = list(user_input.get(CONF_MANAGERS) or [])
+            # Strip owner — see async_step_user for rationale.
+            if owner_id and owner_id in managers_selected:
+                managers_selected = [u for u in managers_selected if u != owner_id]
+            self._draft[CONF_MANAGERS] = managers_selected
             self._draft[CONF_MEDICINES_DB_URL] = (
                 user_input.get(CONF_MEDICINES_DB_URL) or DEFAULT_MEDICINES_DB_URL
             )
@@ -1176,6 +1237,12 @@ class PillPilotConfigFlow(ConfigFlow, domain=DOMAIN):
         med_db: MedicineDatabase | None = (
             self.hass.data.get(DOMAIN, {}).get("medicine_db")
         )
+        # The stored list never contains owner_id (stripped on save).
+        # The form prepends it so the owner shows pre-checked.
+        stored_managers = list(existing.data.get(CONF_MANAGERS) or [])
+        default_managers = list(stored_managers)
+        if owner_id and owner_id not in default_managers:
+            default_managers.insert(0, owner_id)
         return self.async_show_form(
             step_id="reconfigure",
             description_placeholders={
@@ -1198,6 +1265,16 @@ class PillPilotConfigFlow(ConfigFlow, domain=DOMAIN):
                             options=PANEL_VISIBILITY_OPTIONS,
                             translation_key="panel_visibility",
                             mode=SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_MANAGERS,
+                        default=default_managers,
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=manager_options,
+                            multiple=True,
+                            mode=SelectSelectorMode.LIST,
                         )
                     ),
                     vol.Optional(
