@@ -3864,10 +3864,10 @@ class PillPilotPanel extends HTMLElement {
           <div class="person-actions">
             <button class="bulk-action-btn" data-action="take-all-person" data-person-key="${personIdAttr}" ${disableTakeAll ? "disabled" : ""}>Take all</button>
             <button class="bulk-action-btn" data-action="take-due-person" data-person-key="${personIdAttr}" ${disableTakeDue ? "disabled" : ""}>Take due</button>
+            <button class="bulk-action-btn" data-action="take-missed-person" data-person-key="${personIdAttr}" ${disableTakeMissed ? "disabled" : ""}>Take missed</button>
             <div class="kebab-wrapper">
               <button class="kebab-btn" data-action="toggle-kebab" data-person-key="${personIdAttr}" aria-label="More actions">⋮</button>
               <div class="kebab-menu" data-kebab-for="${personIdAttr}">
-                <button data-action="take-missed-person" data-person-key="${personIdAttr}" ${disableTakeMissed ? "disabled" : ""}>Take missed today</button>
                 <button data-action="snooze-due-person" data-person-key="${personIdAttr}" ${disableTakeDue ? "disabled" : ""}>Snooze all due (15m)</button>
                 <button data-action="snooze-missed-person" data-person-key="${personIdAttr}" ${disableTakeMissed ? "disabled" : ""}>Snooze all missed (15m)</button>
                 <button data-action="undo-person" data-person-key="${personIdAttr}" ${disableUndo ? "disabled" : ""}>Undo last action</button>

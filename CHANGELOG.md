@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.17] — 2026-05-17
+
+- Moved Take missed from the kebab `⋮` menu to a top-level button in the per-person header, next to Take all and Take due. Renamed from "Take missed today" to "Take missed" to match siblings. Handler `_takeMissedForPerson` unchanged.
+
 ## [0.2.16] — 2026-05-16
 
 - Catalog schema v2 — `medicines_se.json` carries 14477 variants across 7331 medicines, each a `{npl_id, strength, form}` triple. Concerta resolves to four variants (18/27/36/54 mg Depottablett), Trimbow to three combo strengths, Eliquis to six across granules/dospåse/tablets. Loader handles both v1 and v2 entries; `_bundled_has_content_drift` samples the `variants` field so the v2 bundle force-loads over a v1 stored cache.
