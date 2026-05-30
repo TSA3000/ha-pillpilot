@@ -131,3 +131,49 @@ refresh_medicines_database:
 backfill_from_catalog:
   name: Backfill from catalog
   description: Walk every configured medicine and fill any empty NPL ID and ATC code from the bundled catalog by matching on the medicine name. Never overwrites values you've already entered. Catches up medicines added before automatic catalog auto-fill landed.
+
+mark_taken_bulk:
+  name: Mark several doses as taken
+  description: Record multiple doses as taken in one call. The panel uses this for the Take all / Take due / Take missed buttons — one backend save and refresh for the whole set instead of one per dose.
+  fields:
+    items:
+      name: Items
+      description: "List of doses to mark. Each entry: medicine_id (required), scheduled_for (ISO timestamp, optional), person_id (optional)."
+      required: true
+      example: '[{"medicine_id": "a1b2c3", "scheduled_for": "2026-05-04T07:00:00+02:00"}]'
+      selector:
+        object:
+
+snooze_bulk:
+  name: Snooze several doses
+  description: Snooze multiple doses by the same number of minutes in one call. Used by the panel's bulk snooze.
+  fields:
+    items:
+      name: Items
+      description: "List of doses to snooze. Each entry: medicine_id (required), scheduled_for (ISO timestamp, optional), person_id (optional)."
+      required: true
+      example: '[{"medicine_id": "a1b2c3", "scheduled_for": "2026-05-04T07:00:00+02:00"}]'
+      selector:
+        object:
+    minutes:
+      name: Minutes
+      description: How long to snooze each dose.
+      required: true
+      default: 15
+      selector:
+        number:
+          min: 1
+          max: 240
+          unit_of_measurement: minutes
+
+unmark_taken_bulk:
+  name: Undo several taken doses
+  description: Remove the most recent taken record for multiple doses in one call. Used by the panel's bulk Undo.
+  fields:
+    items:
+      name: Items
+      description: "List of doses to undo. Each entry: medicine_id (required), scheduled_for (ISO timestamp, optional), person_id (optional)."
+      required: true
+      example: '[{"medicine_id": "a1b2c3", "scheduled_for": "2026-05-04T07:00:00+02:00"}]'
+      selector:
+        object:

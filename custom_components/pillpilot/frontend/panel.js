@@ -2346,25 +2346,32 @@ class PillPilotPanel extends HTMLElement {
   // back through unmark_taken, so each helper records what it sent.
   _executeBulkForPerson(personKey, doses) {
     if (!doses.length) return;
+    if (!this._hass) return;
     this._lastActionMap[personKey] = doses.map((d) => ({
       medicineId: d.medicineId,
       scheduledAt: d.scheduledAt,
     }));
-    // v0.2.15/v0.2.16: batch renders during a bulk loop. Each
-    // single-dose helper sets its pending entry but skips its
-    // inline render while the flag is on; we render once at the
-    // end. For "Take all" on 10 doses that's 1 render instead
-    // of 11.
-    this._bulkInProgress = true;
-    try {
-      for (const d of doses) {
-        this._markTaken(d.medicineId, d.scheduledAt);
+    // v0.2.19: one bulk service call instead of N. The backend records
+    // every dose, then saves and refreshes once — collapsing N disk
+    // writes + N recomputes into one each. Set every dose's pending
+    // spinner up front, render once, then fire a single call. Bulk
+    // covers Take only (the take-all / take-due / take-missed buttons);
+    // skip and snooze stay per-row.
+    for (const d of doses) {
+      if (d.scheduledAt) {
+        this._pendingActions.set(
+          `${d.medicineId}::${d.scheduledAt}`,
+          { targetCheck: (s) => s === STATE_TAKEN, ts: Date.now() }
+        );
       }
-    } finally {
-      this._bulkInProgress = false;
     }
     this._lastSig = null;
     this._render();
+    const items = doses.map((d) => ({
+      medicine_id: d.medicineId,
+      scheduled_for: d.scheduledAt || null,
+    }));
+    this._hass.callService("pillpilot", "mark_taken_bulk", { items });
   }
 
   _takeAllForPerson(personKey) {
@@ -2402,44 +2409,48 @@ class PillPilotPanel extends HTMLElement {
     const group = this._findPersonGroup(personKey);
     if (!group) return;
     const targets = group.doses.filter((d) => d.status === STATE_DUE);
-    this._bulkInProgress = true;
-    try {
-      for (const d of targets) {
-        this._snooze(d.medicineId, d.scheduledAt);
-      }
-    } finally {
-      this._bulkInProgress = false;
-    }
-    this._lastSig = null;
-    this._render();
+    this._executeBulkSnooze(targets, 15);
   }
 
   _snoozeAllMissedForPerson(personKey) {
     const group = this._findPersonGroup(personKey);
     if (!group) return;
     const targets = group.doses.filter((d) => d.status === STATE_MISSED);
-    this._bulkInProgress = true;
-    try {
-      for (const d of targets) {
-        this._snooze(d.medicineId, d.scheduledAt);
+    this._executeBulkSnooze(targets, 15);
+  }
+
+  // v0.2.19: bulk snooze via one service call (one backend save +
+  // refresh) instead of looping per dose.
+  _executeBulkSnooze(doses, minutes) {
+    if (!doses.length || !this._hass) return;
+    for (const d of doses) {
+      if (d.scheduledAt) {
+        this._pendingActions.set(
+          `${d.medicineId}::${d.scheduledAt}`,
+          { targetCheck: (s) => s === STATE_SNOOZED, ts: Date.now() }
+        );
       }
-    } finally {
-      this._bulkInProgress = false;
     }
     this._lastSig = null;
     this._render();
+    const items = doses.map((d) => ({
+      medicine_id: d.medicineId,
+      scheduled_for: d.scheduledAt || null,
+    }));
+    this._hass.callService("pillpilot", "snooze_bulk", { items, minutes });
   }
 
   _undoLastForPerson(personKey) {
     const records = this._lastActionMap[personKey] || [];
-    this._bulkInProgress = true;
-    try {
-      for (const r of records) {
-        this._unmarkTaken(r.medicineId, r.scheduledAt);
-      }
-    } finally {
-      this._bulkInProgress = false;
+    if (!records.length || !this._hass) {
+      this._lastActionMap[personKey] = null;
+      return;
     }
+    const items = records.map((r) => ({
+      medicine_id: r.medicineId,
+      scheduled_for: r.scheduledAt || null,
+    }));
+    this._hass.callService("pillpilot", "unmark_taken_bulk", { items });
     this._lastActionMap[personKey] = null;
     this._lastSig = null;
     this._render();

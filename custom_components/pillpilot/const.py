@@ -139,9 +139,12 @@ EVENT_DOSE_UNMARKED = f"{DOMAIN}_dose_unmarked"
 
 # ---- services -------------------------------------------------------
 SERVICE_MARK_TAKEN = "mark_taken"
+SERVICE_MARK_TAKEN_BULK = "mark_taken_bulk"
 SERVICE_SKIP = "skip"
 SERVICE_SNOOZE = "snooze"
+SERVICE_SNOOZE_BULK = "snooze_bulk"
 SERVICE_UNMARK_TAKEN = "unmark_taken"
+SERVICE_UNMARK_TAKEN_BULK = "unmark_taken_bulk"
 SERVICE_REFRESH_MEDICINES_DATABASE = "refresh_medicines_database"
 SERVICE_BACKFILL_FROM_CATALOG = "backfill_from_catalog"
 

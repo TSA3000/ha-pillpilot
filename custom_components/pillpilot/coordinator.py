@@ -403,18 +403,41 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         the single prescription (single-prescription medicine) or
         the closest-by-time prescription (multi-prescription).
         """
+        when = when or dt_util.now()
+        if self._record_taken(medicine_id, when, scheduled_for, person_id):
+            await self._async_save()
+            # Immediate (not async_request_refresh) so the panel's pending
+            # spinner clears as soon as the new state is computed. The
+            # debounced variant can defer the push by up to the request-
+            # refresh cooldown when an action lands near the periodic scan,
+            # which read as "slow to register". The periodic scan and
+            # source refreshes stay debounced — that's their purpose.
+            await self.async_refresh()
+
+    def _record_taken(
+        self,
+        medicine_id: str,
+        when: datetime,
+        scheduled_for: datetime | None,
+        person_id: str | None,
+    ) -> bool:
+        """Build, append, and announce one taken-dose record.
+
+        Returns True if a record was added. Does not save or refresh —
+        callers batch those (single action saves + refreshes once; the
+        bulk path saves + refreshes once for the whole set).
+        """
         med = self._find(medicine_id)
         if not med:
             _LOGGER.warning("mark_taken: unknown medicine_id %s", medicine_id)
-            return
-        when = when or dt_util.now()
+            return False
         prescription = self._resolve_prescription(med, person_id, when)
         if prescription is None:
             _LOGGER.warning(
                 "mark_taken: no prescription matched for %s person_id=%s",
                 medicine_id, person_id,
             )
-            return
+            return False
         resolved_pid = prescription.get(CONF_MED_PERSON) or None
         scheduled = scheduled_for or self._closest_scheduled(prescription, when)
         record = DoseRecord(
@@ -424,7 +447,6 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
             taken_at=when.isoformat(),
         )
         self._history.setdefault(medicine_id, []).append(record)
-        await self._async_save()
         self.hass.bus.async_fire(
             EVENT_DOSE_TAKEN,
             {
@@ -436,7 +458,39 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
                 "person_name": self._person_name(resolved_pid),
             },
         )
-        await self.async_request_refresh()
+        return True
+
+    async def async_mark_taken_bulk(
+        self, items: list[dict[str, Any]]
+    ) -> None:
+        """Record several doses as taken in one pass.
+
+        ``items`` is a list of dicts with ``medicine_id`` (required),
+        ``scheduled_for`` (ISO string or None), and ``person_id``
+        (string or None). Records every matching dose, then saves and
+        refreshes once for the whole set — one disk write and one
+        recompute instead of N. Per-dose events still fire so
+        automations behave the same as individual actions.
+        """
+        when = dt_util.now()
+        recorded = False
+        for item in items:
+            medicine_id = item.get("medicine_id")
+            if not medicine_id:
+                continue
+            raw_sched = item.get("scheduled_for")
+            scheduled_for = (
+                dt_util.parse_datetime(raw_sched)
+                if isinstance(raw_sched, str)
+                else raw_sched
+            )
+            if self._record_taken(
+                medicine_id, when, scheduled_for, item.get("person_id")
+            ):
+                recorded = True
+        if recorded:
+            await self._async_save()
+            await self.async_refresh()
 
     async def async_skip(
         self,
@@ -480,7 +534,7 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
                 "person_name": self._person_name(resolved_pid),
             },
         )
-        await self.async_request_refresh()
+        await self.async_refresh()
 
     async def async_snooze(
         self,
@@ -512,13 +566,30 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         if not med:
             return
         now = dt_util.now()
+        if self._record_snooze(medicine_id, minutes, scheduled_for, person_id, now):
+            await self._async_save()
+            await self.async_refresh()
+
+    def _record_snooze(
+        self,
+        medicine_id: str,
+        minutes: int,
+        scheduled_for: datetime | None,
+        person_id: str | None,
+        now: datetime,
+    ) -> bool:
+        """Write (or update) a snooze on the slot's DoseRecord and
+        announce it. No save / refresh — callers batch those."""
+        med = self._find(medicine_id)
+        if not med:
+            return False
         prescription = self._resolve_prescription(med, person_id, now)
         if prescription is None:
-            return
+            return False
         resolved_pid = prescription.get(CONF_MED_PERSON) or None
         scheduled = scheduled_for or self._closest_scheduled(prescription, now)
         if scheduled is None:
-            return
+            return False
         sched_iso = scheduled.isoformat()
         snoozed_until_iso = (now + timedelta(minutes=minutes)).isoformat()
 
@@ -550,7 +621,6 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         # the per-tick gating in _build_prescription_state.
         self._fired_due.discard((medicine_id, resolved_pid, sched_iso))
 
-        await self._async_save()
         self.hass.bus.async_fire(
             EVENT_DOSE_SNOOZED,
             {
@@ -563,7 +633,32 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
                 "person_name": self._person_name(resolved_pid),
             },
         )
-        await self.async_request_refresh()
+        return True
+
+    async def async_snooze_bulk(
+        self, items: list[dict[str, Any]], minutes: int
+    ) -> None:
+        """Snooze several doses by the same number of minutes in one
+        pass — one save + one refresh for the whole set."""
+        now = dt_util.now()
+        recorded = False
+        for item in items:
+            medicine_id = item.get("medicine_id")
+            if not medicine_id:
+                continue
+            raw_sched = item.get("scheduled_for")
+            scheduled_for = (
+                dt_util.parse_datetime(raw_sched)
+                if isinstance(raw_sched, str)
+                else raw_sched
+            )
+            if self._record_snooze(
+                medicine_id, minutes, scheduled_for, item.get("person_id"), now
+            ):
+                recorded = True
+        if recorded:
+            await self._async_save()
+            await self.async_refresh()
 
     async def async_unmark_taken(
         self,
@@ -600,6 +695,22 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         Fires ``EVENT_DOSE_UNMARKED`` so automations that reacted to
         ``EVENT_DOSE_TAKEN`` can roll back if they want.
         """
+        removed = self._remove_taken(medicine_id, scheduled_for, person_id)
+        if not removed:
+            return False
+        await self._async_save()
+        await self.async_refresh()
+        return True
+
+    def _remove_taken(
+        self,
+        medicine_id: str,
+        scheduled_for: datetime | None,
+        person_id: str | None,
+    ) -> bool:
+        """Remove the most recent matching ``taken`` record and announce
+        it. Returns True if one was removed. No save / refresh — callers
+        batch those."""
         med = self._find(medicine_id)
         if not med:
             _LOGGER.warning("unmark_taken: unknown medicine_id %s", medicine_id)
@@ -635,7 +746,6 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         # so _history doesn't accumulate empty buckets over time.
         if not records:
             self._history.pop(medicine_id, None)
-        await self._async_save()
         self.hass.bus.async_fire(
             EVENT_DOSE_UNMARKED,
             {
@@ -647,8 +757,31 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
                 "person_name": self._person_name(removed.person_id),
             },
         )
-        await self.async_request_refresh()
         return True
+
+    async def async_unmark_taken_bulk(
+        self, items: list[dict[str, Any]]
+    ) -> None:
+        """Undo several taken doses in one pass — one save + one refresh
+        for the whole set."""
+        removed_any = False
+        for item in items:
+            medicine_id = item.get("medicine_id")
+            if not medicine_id:
+                continue
+            raw_sched = item.get("scheduled_for")
+            scheduled_for = (
+                dt_util.parse_datetime(raw_sched)
+                if isinstance(raw_sched, str)
+                else raw_sched
+            )
+            if self._remove_taken(
+                medicine_id, scheduled_for, item.get("person_id")
+            ):
+                removed_any = True
+        if removed_any:
+            await self._async_save()
+            await self.async_refresh()
 
     async def async_refresh_sources(self) -> None:
         for src in self._sources:

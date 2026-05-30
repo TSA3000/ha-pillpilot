@@ -32,10 +32,13 @@ from .const import (
     PLATFORMS,
     SERVICE_BACKFILL_FROM_CATALOG,
     SERVICE_MARK_TAKEN,
-    SERVICE_REFRESH_MEDICINES_DATABASE,
+    SERVICE_MARK_TAKEN_BULK,
     SERVICE_SKIP,
     SERVICE_SNOOZE,
+    SERVICE_SNOOZE_BULK,
     SERVICE_UNMARK_TAKEN,
+    SERVICE_UNMARK_TAKEN_BULK,
+    SERVICE_REFRESH_MEDICINES_DATABASE,
     SUBENTRY_TYPE_MEDICINE,
     VIS_ADMINS_ONLY,
     VIS_EVERYONE,
@@ -71,6 +74,22 @@ MARK_TAKEN_SCHEMA = vol.Schema(
         vol.Optional("scheduled_for"): cv.datetime,
     }
 )
+MARK_TAKEN_BULK_SCHEMA = vol.Schema(
+    {
+        # One service call records several doses, saving and refreshing
+        # once for the whole set. scheduled_for is accepted as an ISO
+        # string (what the panel sends) and parsed in the coordinator.
+        vol.Required("items"): [
+            vol.Schema(
+                {
+                    vol.Required("medicine_id"): cv.string,
+                    vol.Optional("person_id"): vol.Any(cv.string, None),
+                    vol.Optional("scheduled_for"): vol.Any(cv.string, None),
+                }
+            )
+        ],
+    }
+)
 SKIP_SCHEMA = vol.Schema(
     {
         vol.Required("medicine_id"): cv.string,
@@ -91,6 +110,33 @@ UNMARK_TAKEN_SCHEMA = vol.Schema(
         vol.Required("medicine_id"): cv.string,
         vol.Optional("person_id"): vol.Any(cv.string, None),
         vol.Optional("scheduled_for"): cv.datetime,
+    }
+)
+SNOOZE_BULK_SCHEMA = vol.Schema(
+    {
+        vol.Required("items"): [
+            vol.Schema(
+                {
+                    vol.Required("medicine_id"): cv.string,
+                    vol.Optional("person_id"): vol.Any(cv.string, None),
+                    vol.Optional("scheduled_for"): vol.Any(cv.string, None),
+                }
+            )
+        ],
+        vol.Required("minutes", default=15): vol.All(int, vol.Range(min=1, max=240)),
+    }
+)
+UNMARK_TAKEN_BULK_SCHEMA = vol.Schema(
+    {
+        vol.Required("items"): [
+            vol.Schema(
+                {
+                    vol.Required("medicine_id"): cv.string,
+                    vol.Optional("person_id"): vol.Any(cv.string, None),
+                    vol.Optional("scheduled_for"): vol.Any(cv.string, None),
+                }
+            )
+        ],
     }
 )
 REFRESH_MEDICINES_DB_SCHEMA = vol.Schema(
@@ -487,6 +533,33 @@ def _register_services(hass: HomeAssistant) -> None:
                 med_id, when=when, scheduled_for=scheduled_for, person_id=person_id
             )
 
+    async def handle_mark_taken_bulk(call: ServiceCall) -> None:
+        # All medicines belong to the one PillPilot coordinator
+        # (unique_id=DOMAIN), so resolve once from the first item and
+        # record the whole set in a single save + refresh.
+        items: list[dict] = call.data["items"]
+        if not items:
+            return
+        coord = await _resolve(items[0]["medicine_id"])
+        if coord:
+            await coord.async_mark_taken_bulk(items)
+
+    async def handle_snooze_bulk(call: ServiceCall) -> None:
+        items: list[dict] = call.data["items"]
+        if not items:
+            return
+        coord = await _resolve(items[0]["medicine_id"])
+        if coord:
+            await coord.async_snooze_bulk(items, call.data["minutes"])
+
+    async def handle_unmark_taken_bulk(call: ServiceCall) -> None:
+        items: list[dict] = call.data["items"]
+        if not items:
+            return
+        coord = await _resolve(items[0]["medicine_id"])
+        if coord:
+            await coord.async_unmark_taken_bulk(items)
+
     async def handle_skip(call: ServiceCall) -> None:
         med_id = call.data["medicine_id"]
         person_id: str | None = call.data.get("person_id")
@@ -652,16 +725,31 @@ def _register_services(hass: HomeAssistant) -> None:
         DOMAIN, SERVICE_MARK_TAKEN, handle_mark_taken, schema=MARK_TAKEN_SCHEMA
     )
     hass.services.async_register(
+        DOMAIN,
+        SERVICE_MARK_TAKEN_BULK,
+        handle_mark_taken_bulk,
+        schema=MARK_TAKEN_BULK_SCHEMA,
+    )
+    hass.services.async_register(
         DOMAIN, SERVICE_SKIP, handle_skip, schema=SKIP_SCHEMA
     )
     hass.services.async_register(
         DOMAIN, SERVICE_SNOOZE, handle_snooze, schema=SNOOZE_SCHEMA
     )
     hass.services.async_register(
+        DOMAIN, SERVICE_SNOOZE_BULK, handle_snooze_bulk, schema=SNOOZE_BULK_SCHEMA
+    )
+    hass.services.async_register(
         DOMAIN,
         SERVICE_UNMARK_TAKEN,
         handle_unmark_taken,
         schema=UNMARK_TAKEN_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_UNMARK_TAKEN_BULK,
+        handle_unmark_taken_bulk,
+        schema=UNMARK_TAKEN_BULK_SCHEMA,
     )
     hass.services.async_register(
         DOMAIN,
