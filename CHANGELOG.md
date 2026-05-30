@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.19-beta3] — 2026-05-30
+
+Bugfix.
+
+- Fixed a freeze when updating, creating, or deleting a medicine from the panel. The `_require_manager` and `_require_can_see_medicine` WS decorators were async wrappers; HA's websocket dispatcher calls the outermost handler synchronously, so the scheduled coroutine was never awaited (`RuntimeWarning: coroutine '_ws_update_medicine' was never awaited`) and the request hung. Both are now sync wrappers, matching HA's own `@websocket_api.require_admin`. Affected every mutating WS command since v0.2.18.
+
 ## [0.2.19-beta2] — 2026-05-30
 
 Beta release. Two additions: a new 'Selected users' sidebar visibility mode, and a panel UI language override.

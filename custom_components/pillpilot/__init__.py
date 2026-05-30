@@ -780,18 +780,23 @@ def _is_pillpilot_manager(hass: HomeAssistant, user) -> bool:
 
 
 def _require_manager(func):
-    """WS decorator: gate handler on PillPilot manager rights. Applies
-    after @websocket_api.async_response, matching the stacking used by
-    HA's own @websocket_api.require_admin."""
+    """WS decorator: gate handler on PillPilot manager rights.
+
+    Sync wrapper, matching HA's own @websocket_api.require_admin. HA's
+    dispatcher calls the outermost handler synchronously, so this runs
+    the check and then calls the already-async_response-wrapped
+    scheduler without awaiting. An async wrapper here would leave the
+    scheduled coroutine un-awaited and freeze the request.
+    """
     @functools.wraps(func)
-    async def wrapped(
+    def wrapped(
         hass: HomeAssistant,
         connection: websocket_api.ActiveConnection,
         msg: dict,
     ) -> None:
         if not _is_pillpilot_manager(hass, connection.user):
             raise Unauthorized()
-        return await func(hass, connection, msg)
+        func(hass, connection, msg)
     return wrapped
 
 
@@ -875,11 +880,12 @@ def _find_medicine_subentry(
 
 def _require_can_see_medicine(func):
     """WS decorator: gate handler on ``_can_see_medicine`` for the
-    medicine_id in ``msg``. Applies on top of @_require_manager — both
-    checks must pass for write paths.
+    medicine_id in ``msg``. Stacks on top of @_require_manager — both
+    checks must pass for write paths. Sync wrapper, see _require_manager
+    for why.
     """
     @functools.wraps(func)
-    async def wrapped(
+    def wrapped(
         hass: HomeAssistant,
         connection: websocket_api.ActiveConnection,
         msg: dict,
@@ -888,7 +894,7 @@ def _require_can_see_medicine(func):
         _, sub = _find_medicine_subentry(hass, medicine_id) if medicine_id else (None, None)
         if sub is not None and not _can_see_medicine(hass, connection.user, sub.data):
             raise Unauthorized()
-        return await func(hass, connection, msg)
+        func(hass, connection, msg)
     return wrapped
 
 
