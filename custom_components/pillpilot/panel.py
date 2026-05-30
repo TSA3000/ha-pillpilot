@@ -5,7 +5,8 @@ Clicking it opens a custom panel — see ``frontend/panel.js`` for the
 UI itself. The Python side here:
 
   1. Reads the panel visibility setting from the config entry
-     (``CONF_PANEL_VISIBILITY``: "everyone" / "admins" / "hidden").
+     (``CONF_PANEL_VISIBILITY``: "admins" / "selected_users" /
+     "everyone" / "hidden").
   2. If "hidden", skips registration entirely — no sidebar entry,
      no static asset path served.
   3. Otherwise, serves the integration's ``frontend/`` directory as
@@ -14,6 +15,11 @@ UI itself. The Python side here:
      element defined in panel.js.
   4. "admins" sets ``require_admin=True`` on the panel registration
      so non-admin users don't see it in their sidebar.
+  5. "selected_users" registers with ``require_admin=False`` so
+     non-admin users can navigate to the panel; the panel.js side
+     reads the allowlist from the panel config dict and gates the
+     UI client-side. HA's panel API has no per-user allowlist —
+     this is the available approximation.
 
 Each user can additionally hide the panel from their own sidebar via
 HA's built-in **Profile → Edit sidebar** — that's HA-core behavior we
@@ -46,11 +52,15 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import (
+    CONF_LANGUAGE,
+    CONF_PANEL_SELECTED_USERS,
     CONF_PANEL_VISIBILITY,
+    DEFAULT_LANGUAGE,
     DEFAULT_PANEL_VISIBILITY,
     DOMAIN,
     PANEL_VIS_ADMINS,
     PANEL_VIS_HIDDEN,
+    PANEL_VIS_SELECTED_USERS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -135,7 +145,14 @@ async def async_register_panel(hass: HomeAssistant, entry: ConfigEntry) -> None:
     if domain_data.get(_PANEL_REGISTERED):
         return
 
+    # require_admin handling:
+    #   * admins         → True (HA hides the sidebar entry from non-admins)
+    #   * selected_users → False (panel.js gates content client-side;
+    #                              HA has no per-user panel API)
+    #   * everyone       → False
     require_admin = visibility == PANEL_VIS_ADMINS
+    selected_users = list(entry.data.get(CONF_PANEL_SELECTED_USERS) or [])
+    language = entry.data.get(CONF_LANGUAGE) or DEFAULT_LANGUAGE
     try:
         frontend.async_register_built_in_panel(
             hass,
@@ -151,6 +168,16 @@ async def async_register_panel(hass: HomeAssistant, entry: ConfigEntry) -> None:
                     "module_url": (
                         f"{STATIC_URL_PATH}/panel.js?v={_PANEL_VERSION}"
                     ),
+                },
+                # Panel-side config consumed by panel.js on mount.
+                # visibility_mode tells the JS which gating logic to
+                # apply; selected_users carries the allowlist for the
+                # selected_users mode; language is the UI language
+                # override (auto / en / sv).
+                "pillpilot": {
+                    "visibility_mode": visibility,
+                    "selected_users": selected_users,
+                    "language": language,
                 },
             },
             require_admin=require_admin,

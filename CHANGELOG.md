@@ -1,15 +1,32 @@
 # Changelog
 
+## [0.2.19-beta2] — 2026-05-30
+
+Beta release. Two additions: a new 'Selected users' sidebar visibility mode, and a panel UI language override.
+
+**Sidebar panel visibility**
+
+- New `selected_users` mode. The Sidebar panel dropdown now reads: Admins only / Selected users / Everyone / Hidden.
+- New `Selected users for sidebar` multi-select field in the install + reconfigure flows. Picks which HA users can access the panel when the mode is `selected_users`. Owner is implicitly allowed (pre-checked + stripped on save).
+- Implementation: HA's `frontend.async_register_built_in_panel` only takes `require_admin: bool` — no per-user allowlist at the platform layer. In `selected_users` mode, the panel registers with `require_admin=False` and the panel.js side reads the allowlist from the registration config and gates the body client-side. The sidebar entry is visible to all users in this mode; non-allowed users see an access-denied placeholder when they click through.
+- `CONF_PANEL_SELECTED_USERS` is added to `_RELOAD_REQUIRING_KEYS` so changes take effect on save.
+
+**Panel UI language**
+
+- New `Panel language` field in the install + reconfigure flows. Options: `auto` (default, follows each user's HA language), `en`, `sv`.
+- `panel.js` resolves the effective language on render and looks up its hardcoded strings against a translation table. The most-visible strings are covered in this beta: bulk action buttons (Take all / Take due / Take missed), Saving spinner, modal section titles (Identity / Notes / Codes / Visibility / Prescriptions), modal buttons (Save / Cancel / Delete / + Add prescription), Add medicine label, Undo, loading/empty/access-denied placeholders. Status badges, schedule descriptions, and detailed form hints are not yet translated and stay English regardless of language setting — they remain a TODO for the next beta.
+- HA-managed translations (the config flow forms) follow each user's HA language natively and are unaffected by this setting.
+
 ## [0.2.19-beta1] — 2026-05-30
 
-Beta release. Access control: per-medicine visibility.
+Beta release. Per-medicine visibility.
 
 - New per-medicine `visibility` setting with four modes: `everyone` (default), `linked_person`, `admins_only`, `specific_users`. Owner and managers always pass regardless of mode — visibility is the gate for everyone else.
 - Visibility section added to the panel's Add and Edit medicine modal. When `specific_users` is selected, a multi-select of HA users (lazy-fetched via the new `pillpilot/get_users` WS endpoint) appears with the owner pre-checked as an informational hint.
 - Panel filters its rendering through `_canSeeMedicine`. The `_getMedicines` cache key now includes the current user_id so the filter result invalidates when sessions change.
 - WS mutating commands (`update_medicine`, `delete_medicine`) carry a new `@_require_can_see_medicine` decorator stacked after `@_require_manager`. Both must pass: a manager who can't see the medicine cannot edit it either.
 - Backend strips owner_id from `visibility_users` on save (v0.2.18 pattern applied here too). Owner remains implicitly allowed via `user.is_owner`.
-- Sensors stay globally readable — HA's entity registry permissions are admin / non-admin only, so per-user filtering is panel-level. Sensor gating for hard privacy is Tier 3, deferred.
+- Sensors stay globally readable — HA's entity registry permissions are admin / non-admin only, so per-user filtering is panel-level. Sensor gating for hard privacy is deferred.
 - HA Settings reconfigure flow does not yet expose visibility — panel-only for this beta. Pre-v0.2.19 medicines keep `everyone` as their effective mode.
 - New constants in `const.py`: `CONF_MED_VISIBILITY`, `CONF_MED_VISIBILITY_USERS`, `VIS_EVERYONE`, `VIS_LINKED_PERSON`, `VIS_ADMINS_ONLY`, `VIS_SPECIFIC_USERS`, `DEFAULT_MED_VISIBILITY`, `MED_VISIBILITY_OPTIONS`.
 

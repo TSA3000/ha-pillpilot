@@ -163,20 +163,29 @@ STATE_SKIPPED = "skipped"
 STATE_SNOOZED = "snoozed"
 
 # ---------------------------------------------------------------------------
-# Sidebar panel visibility (added in v0.2.3)
+# Sidebar panel visibility (added in v0.2.3, expanded in v0.2.19)
 #
 # Stored in entry.data[CONF_PANEL_VISIBILITY]. Defaults to "everyone" for
-# entries that pre-date this feature, so existing v0.2.1/v0.2.2 installs
-# keep the same behavior they had before.
+# entries that pre-date this feature, so older installs keep their behavior.
+#
+# HA's frontend.async_register_built_in_panel takes require_admin: bool
+# only — there's no per-user panel registration. The "selected_users" mode
+# works around this by registering the panel for everyone and gating the
+# panel body client-side in panel.js. The sidebar entry is still visible
+# to all users in that mode; clicking it as a non-allowed user shows an
+# access-denied placeholder instead of the medicines view.
 # ---------------------------------------------------------------------------
 CONF_PANEL_VISIBILITY = "panel_visibility"
-PANEL_VIS_EVERYONE = "everyone"   # registered, require_admin=False
-PANEL_VIS_ADMINS = "admins"       # registered, require_admin=True
-PANEL_VIS_HIDDEN = "hidden"       # not registered at all
+CONF_PANEL_SELECTED_USERS = "panel_selected_users"
+PANEL_VIS_EVERYONE = "everyone"               # registered, require_admin=False
+PANEL_VIS_ADMINS = "admins"                   # registered, require_admin=True
+PANEL_VIS_SELECTED_USERS = "selected_users"   # registered for everyone; panel.js gates
+PANEL_VIS_HIDDEN = "hidden"                   # not registered at all
 DEFAULT_PANEL_VISIBILITY = PANEL_VIS_EVERYONE
 PANEL_VISIBILITY_OPTIONS = [
-    PANEL_VIS_EVERYONE,
     PANEL_VIS_ADMINS,
+    PANEL_VIS_SELECTED_USERS,
+    PANEL_VIS_EVERYONE,
     PANEL_VIS_HIDDEN,
 ]
 
@@ -201,7 +210,9 @@ CONF_MANAGERS = "managers"
 # medicine in the panel and who can mutate it via the WS commands.
 # Sensors stay global — HA's entity-registry permissions are admin/non-admin
 # only, so a non-allowed user can still read sensor state via Developer
-# Tools. Tier 2 stops at panel-level visibility; sensor gating is Tier 3.
+# Tools. This setting is panel-level only; entity-level gating would
+# require skipping sensor creation for restricted medicines and is not
+# part of this release.
 #
 # Modes:
 #   * everyone        — default. Backward-compat for pre-v0.2.19 entries
@@ -227,3 +238,22 @@ MED_VISIBILITY_OPTIONS = [
     VIS_ADMINS_ONLY,
     VIS_SPECIFIC_USERS,
 ]
+
+# ---------------------------------------------------------------------------
+# Panel UI language override (added in v0.2.19)
+#
+# Stored in entry.data[CONF_LANGUAGE]. Controls which translations the
+# panel.js side uses for its hardcoded strings (bulk action buttons,
+# status badges, modal section titles, etc). "auto" resolves to the
+# current user's HA language at render time; "en" and "sv" override it.
+#
+# The HA-managed translations (strings.json / translations/en.json /
+# translations/sv.json) cover the config flow forms — those follow each
+# user's HA locale natively and are unaffected by this setting.
+# ---------------------------------------------------------------------------
+CONF_LANGUAGE = "language"
+LANG_AUTO = "auto"
+LANG_EN = "en"
+LANG_SV = "sv"
+DEFAULT_LANGUAGE = LANG_AUTO
+LANGUAGE_OPTIONS = [LANG_AUTO, LANG_EN, LANG_SV]

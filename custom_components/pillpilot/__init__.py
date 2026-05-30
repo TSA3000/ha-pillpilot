@@ -15,11 +15,13 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
+    CONF_LANGUAGE,
     CONF_MANAGERS,
     CONF_MED_ATC_CODE,
     CONF_MED_PERSON,
     CONF_MED_VISIBILITY,
     CONF_MED_VISIBILITY_USERS,
+    CONF_PANEL_SELECTED_USERS,
     CONF_MED_ID,
     CONF_MED_NAME,
     CONF_MED_NPL_ID,
@@ -388,7 +390,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 # panel, etc.). Everything else can be picked up by the coordinator
 # without unloading. v0.2.18 adds CONF_MANAGERS — switching the
 # allowlist needs the WS handler's resolved entry to be re-read.
-_RELOAD_REQUIRING_KEYS = (CONF_PANEL_VISIBILITY, CONF_MANAGERS)
+_RELOAD_REQUIRING_KEYS = (
+    CONF_PANEL_VISIBILITY,
+    CONF_PANEL_SELECTED_USERS,
+    CONF_MANAGERS,
+    CONF_LANGUAGE,
+)
 
 
 def _reload_keys_snapshot(entry: ConfigEntry) -> tuple:

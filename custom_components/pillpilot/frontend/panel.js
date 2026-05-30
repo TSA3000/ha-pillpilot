@@ -54,6 +54,77 @@ const STATE_LABELS = {
   [STATE_SNOOZED]: { text: "snoozed", kind: "info" },
 };
 
+// v0.2.19: panel UI strings keyed for translation. The English values
+// are the existing strings; Swedish values are added for users who
+// pick the sv override (or whose HA locale resolves to sv under auto).
+// Strings not yet in this table fall back to English in the source —
+// this is the most-visible subset covered in v0.2.19; the rest are
+// documented as TODO and will be added incrementally.
+const STRINGS = {
+  en: {
+    loading: "Loading…",
+    saving: "Saving…",
+    no_medicines: "No medicines yet",
+    access_denied_title: "Access denied",
+    access_denied_body:
+      "You don't have permission to use the PillPilot panel. Ask the household admin to add you to the panel's user list.",
+    add_medicine: "Add medicine",
+    take_all: "Take all",
+    take_due: "Take due",
+    take_missed: "Take missed",
+    snooze_15m: "Snooze 15m",
+    snooze_30m: "Snooze 30m",
+    snooze_1h: "Snooze 1h",
+    save: "Save",
+    cancel: "Cancel",
+    delete: "Delete",
+    add_prescription: "+ Add prescription",
+    undo: "Undo",
+    section_identity: "Identity",
+    section_notes: "Notes",
+    section_codes: "Codes (optional)",
+    section_visibility: "Visibility",
+    section_prescriptions: "Prescriptions",
+    state_due_now: "due now",
+    state_upcoming: "upcoming",
+    state_taken: "taken",
+    state_missed: "missed",
+    state_skipped: "skipped",
+    state_snoozed: "snoozed",
+  },
+  sv: {
+    loading: "Laddar…",
+    saving: "Sparar…",
+    no_medicines: "Inga mediciner ännu",
+    access_denied_title: "Åtkomst nekad",
+    access_denied_body:
+      "Du har inte behörighet att använda PillPilot-panelen. Be administratören att lägga till dig i panelens användarlista.",
+    add_medicine: "Lägg till medicin",
+    take_all: "Ta alla",
+    take_due: "Ta inplanerade",
+    take_missed: "Ta missade",
+    snooze_15m: "Snooza 15 min",
+    snooze_30m: "Snooza 30 min",
+    snooze_1h: "Snooza 1 tim",
+    save: "Spara",
+    cancel: "Avbryt",
+    delete: "Ta bort",
+    add_prescription: "+ Lägg till recept",
+    undo: "Ångra",
+    section_identity: "Identitet",
+    section_notes: "Anteckningar",
+    section_codes: "Koder (valfritt)",
+    section_visibility: "Synlighet",
+    section_prescriptions: "Recept",
+    state_due_now: "ska tas nu",
+    state_upcoming: "kommande",
+    state_taken: "tagen",
+    state_missed: "missad",
+    state_skipped: "hoppad",
+    state_snoozed: "snoozad",
+  },
+};
+
 // Per-slot statuses that should show action buttons. Snoozed has its
 // own renderer in _renderRowActions (label + Take/Skip), so it's
 // intentionally NOT in this set — the snoozed branch handles it.
@@ -1475,7 +1546,68 @@ class PillPilotPanel extends HTMLElement {
   }
 
   set narrow(_) {}
-  set panel(_) {}
+  // HA pushes the panel definition (config dict from the registration)
+  // into this setter. v0.2.19 reads visibility_mode, selected_users
+  // allowlist, and language override from it.
+  set panel(value) {
+    const cfg = (value && value.config && value.config.pillpilot) || {};
+    this._panelConfig = {
+      visibility_mode: cfg.visibility_mode || "everyone",
+      selected_users: Array.isArray(cfg.selected_users) ? cfg.selected_users : [],
+      language: cfg.language || "auto",
+    };
+    // Re-render if we already have hass — the gating decision and
+    // language strings depend on this config.
+    if (this._hass) {
+      this._lastSig = null;
+      this._render();
+    }
+  }
+
+  // v0.2.19: resolve the effective UI language. "auto" picks up the
+  // current user's HA locale (falling back to "en" if HA hasn't
+  // populated it yet); "en" and "sv" are explicit overrides.
+  _resolveLanguage() {
+    const setting =
+      this._panelConfig && this._panelConfig.language
+        ? this._panelConfig.language
+        : "auto";
+    if (setting === "en" || setting === "sv") return setting;
+    const haLang =
+      (this._hass && this._hass.language) ||
+      (typeof navigator !== "undefined" && navigator.language) ||
+      "en";
+    return haLang.toLowerCase().startsWith("sv") ? "sv" : "en";
+  }
+
+  // Look up a translation by key. Falls back to English, then to
+  // the key itself, so a missing entry is visible but doesn't break
+  // the render.
+  _t(key) {
+    const lang = this._resolveLanguage();
+    const table = STRINGS[lang] || STRINGS.en;
+    return table[key] || STRINGS.en[key] || key;
+  }
+
+  // v0.2.19: client-side panel-level access gate for the
+  // "selected_users" visibility mode. Other modes don't need a gate
+  // because HA enforces them at the registration layer:
+  //   * everyone        — anyone reaches the panel
+  //   * admins          — only admins reach the panel (require_admin=True)
+  //   * hidden          — panel isn't registered, unreachable
+  //   * selected_users  — registered for everyone (HA has no per-user
+  //                       option), so non-allowed users CAN navigate
+  //                       to /pillpilot. This gate stops them seeing
+  //                       the medicines view.
+  _canAccessPanel() {
+    if (!this._hass || !this._hass.user) return false;
+    const u = this._hass.user;
+    if (u.is_owner) return true;
+    const mode = (this._panelConfig && this._panelConfig.visibility_mode) || "everyone";
+    if (mode !== "selected_users") return true;
+    const allowed = (this._panelConfig && this._panelConfig.selected_users) || [];
+    return allowed.includes(u.id);
+  }
 
   connectedCallback() {
     if (this._debug) console.log("[PillPilot] connected");
@@ -2814,6 +2946,8 @@ class PillPilotPanel extends HTMLElement {
     try {
       if (!this._hass) {
         html = this._renderLoading();
+      } else if (!this._canAccessPanel()) {
+        html = this._renderAccessDenied();
       } else {
         const meds = this._getMedicines();
         html = meds.length === 0 ? this._renderEmpty() : this._renderFull(meds);
@@ -2856,9 +2990,31 @@ class PillPilotPanel extends HTMLElement {
         <header>
           <div>
             <h1>PillPilot</h1>
-            <p class="subtitle">Loading…</p>
+            <p class="subtitle">${escapeHtml(this._t("loading"))}</p>
           </div>
         </header>
+      </div>
+    `;
+  }
+
+  // v0.2.19: shown when visibility_mode is "selected_users" and the
+  // current user isn't on the allowlist (and isn't the owner). HA's
+  // panel API has no per-user registration, so the panel is reachable
+  // by everyone in this mode — the gate is here, client-side, not
+  // at the HA frontend layer. Server-side, mutating WS commands are
+  // already gated independently.
+  _renderAccessDenied() {
+    return `
+      <div class="container">
+        <header>
+          <div>
+            <h1>PillPilot</h1>
+            <p class="subtitle">${escapeHtml(this._t("access_denied_title"))}</p>
+          </div>
+        </header>
+        <div class="empty-state">
+          <p>${escapeHtml(this._t("access_denied_body"))}</p>
+        </div>
       </div>
     `;
   }
@@ -2887,7 +3043,7 @@ class PillPilotPanel extends HTMLElement {
         <header>
           <div>
             <h1>PillPilot</h1>
-            <p class="subtitle">No medicines yet</p>
+            <p class="subtitle">${escapeHtml(this._t("no_medicines"))}</p>
           </div>
           <div class="header-actions">
             <button class="config-btn" data-action="open-config" aria-label="Configure integration" title="Configure integration">⚙</button>
@@ -2922,7 +3078,7 @@ class PillPilotPanel extends HTMLElement {
       title: "Edit medicine",
       closeAction: "close-edit-modal",
       saveAction: "save-edit",
-      saveLabel: saving ? "Saving…" : "Save",
+      saveLabel: saving ? this._t("saving") : this._t("save"),
       saving,
       // Delete is Edit-only — there's nothing to delete in the Add flow.
       showDelete: true,
@@ -2936,10 +3092,10 @@ class PillPilotPanel extends HTMLElement {
     const errors = this._editFormErrors || {};
     const saving = this._editFormSaving;
     return this._renderMainModalShell({
-      title: "Add medicine",
+      title: this._t("add_medicine"),
       closeAction: "close-add-modal",
       saveAction: "save-add",
-      saveLabel: saving ? "Adding…" : "Add medicine",
+      saveLabel: saving ? this._t("saving") : this._t("add_medicine"),
       saving,
       showDelete: false,
       body: this._renderMainModalBody(draft, errors),
@@ -2978,7 +3134,7 @@ class PillPilotPanel extends HTMLElement {
           <footer class="modal-footer">
             ${deleteBtn}
             <div class="modal-footer-right">
-              <button class="modal-btn modal-btn-secondary" data-action="${closeAction}" ${saving ? "disabled" : ""}>Cancel</button>
+              <button class="modal-btn modal-btn-secondary" data-action="${closeAction}" ${saving ? "disabled" : ""}>${escapeHtml(this._t("cancel"))}</button>
               <button class="modal-btn modal-btn-primary" data-action="${saveAction}" ${saving ? "disabled" : ""}>${escapeHtml(saveLabel)}</button>
             </div>
           </footer>
@@ -3071,7 +3227,7 @@ class PillPilotPanel extends HTMLElement {
 
     return `
       <div class="form-section">
-        <h3 class="form-section-title">Identity</h3>
+        <h3 class="form-section-title">${escapeHtml(this._t("section_identity"))}</h3>
         <label class="form-field">
           <span class="form-label">Name *</span>
           <input type="text" class="form-input" data-edit-field="drug.name" value="${escapeHtml(draft.drug.name)}" list="pp-edit-name-list" autocomplete="off">
@@ -3086,14 +3242,14 @@ class PillPilotPanel extends HTMLElement {
       </div>
 
       <div class="form-section">
-        <h3 class="form-section-title">Notes</h3>
+        <h3 class="form-section-title">${escapeHtml(this._t("section_notes"))}</h3>
         <label class="form-field">
           <input type="text" class="form-input" data-edit-field="drug.notes" value="${escapeHtml(draft.drug.notes)}" placeholder="Free-form notes (active substance, etc.)">
         </label>
       </div>
 
       <div class="form-section">
-        <h3 class="form-section-title">Codes (optional)</h3>
+        <h3 class="form-section-title">${escapeHtml(this._t("section_codes"))}</h3>
         <div class="form-row">
           <label class="form-field">
             <span class="form-label">ATC code</span>
@@ -3116,13 +3272,13 @@ class PillPilotPanel extends HTMLElement {
 
       <div class="form-section">
         <div class="form-section-titlerow">
-          <h3 class="form-section-title">Prescriptions</h3>
+          <h3 class="form-section-title">${escapeHtml(this._t("section_prescriptions"))}</h3>
         </div>
         ${draft.prescriptions.length === 0
           ? `<div class="prescription-empty">No prescriptions yet — add one to get started.</div>`
           : `<div class="prescription-list">${prescriptionRows}</div>`
         }
-        <button class="modal-btn modal-btn-secondary add-prescription-btn" data-action="add-prescription">+ Add prescription</button>
+        <button class="modal-btn modal-btn-secondary add-prescription-btn" data-action="add-prescription">${escapeHtml(this._t("add_prescription"))}</button>
       </div>
     `;
   }
@@ -3182,7 +3338,7 @@ class PillPilotPanel extends HTMLElement {
     }
     return `
       <div class="form-section">
-        <h3 class="form-section-title">Visibility</h3>
+        <h3 class="form-section-title">${escapeHtml(this._t("section_visibility"))}</h3>
         <label class="form-field">
           <span class="form-label">Who can see this medicine in the panel?</span>
           <select class="form-input" data-edit-field="drug.visibility">${modeOptions}</select>
@@ -3590,7 +3746,7 @@ class PillPilotPanel extends HTMLElement {
 
           </div>
           <footer class="modal-footer">
-            <button class="modal-btn modal-btn-secondary" data-action="close-sub-modal">Cancel</button>
+            <button class="modal-btn modal-btn-secondary" data-action="close-sub-modal">${escapeHtml(this._t("cancel"))}</button>
             <button class="modal-btn modal-btn-primary" data-action="save-sub-modal">${isAdd ? "Add" : "Update"}</button>
           </footer>
         </div>
@@ -4070,9 +4226,9 @@ class PillPilotPanel extends HTMLElement {
             <span class="person-summary">· ${doses.length} dose${doses.length === 1 ? "" : "s"} · ${escapeHtml(summary)}</span>
           </button>
           <div class="person-actions">
-            <button class="bulk-action-btn" data-action="take-all-person" data-person-key="${personIdAttr}" ${disableTakeAll ? "disabled" : ""}>Take all</button>
-            <button class="bulk-action-btn" data-action="take-due-person" data-person-key="${personIdAttr}" ${disableTakeDue ? "disabled" : ""}>Take due</button>
-            <button class="bulk-action-btn" data-action="take-missed-person" data-person-key="${personIdAttr}" ${disableTakeMissed ? "disabled" : ""}>Take missed</button>
+            <button class="bulk-action-btn" data-action="take-all-person" data-person-key="${personIdAttr}" ${disableTakeAll ? "disabled" : ""}>${escapeHtml(this._t("take_all"))}</button>
+            <button class="bulk-action-btn" data-action="take-due-person" data-person-key="${personIdAttr}" ${disableTakeDue ? "disabled" : ""}>${escapeHtml(this._t("take_due"))}</button>
+            <button class="bulk-action-btn" data-action="take-missed-person" data-person-key="${personIdAttr}" ${disableTakeMissed ? "disabled" : ""}>${escapeHtml(this._t("take_missed"))}</button>
             <div class="kebab-wrapper">
               <button class="kebab-btn" data-action="toggle-kebab" data-person-key="${personIdAttr}" aria-label="More actions">⋮</button>
               <div class="kebab-menu" data-kebab-for="${personIdAttr}">
@@ -4138,7 +4294,7 @@ class PillPilotPanel extends HTMLElement {
       return `
         <div class="dose-taken-wrapper">
           <div class="dose-status-label taken">✓ Taken${at ? ` at ${escapeHtml(at)}` : ""}</div>
-          <button class="dose-undo-btn" data-action="undo-dose" data-medicine-id="${medId}" data-scheduled-at="${sched}">Undo</button>
+          <button class="dose-undo-btn" data-action="undo-dose" data-medicine-id="${medId}" data-scheduled-at="${sched}">${escapeHtml(this._t("undo"))}</button>
         </div>
       `;
     }

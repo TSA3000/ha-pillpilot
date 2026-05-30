@@ -7,11 +7,15 @@
         "data": {
           "panel_visibility": "Sidopanel",
           "managers": "HA-användare som får skapa, redigera och ta bort mediciner från panelen. Ägaren är alltid implicit hanterare oavsett denna lista. Tom lista = varje administratör är hanterare (standard, matchar beteendet före v0.2.18).",
+          "panel_selected_users": "Valda användare för sidopanel",
+          "language": "Panelens språk",
           "medicines_db_url": "URL för medicinlistan"
         },
         "data_description": {
           "panel_visibility": "Styr om PillPilot-genvägen visas i sidopanelen. Varje användare kan dölja den för sig själv via Profil → Redigera sidopanel oavsett detta val.",
           "managers": "HA-användare som får skapa, redigera och ta bort mediciner från panelen. Ägaren är alltid implicit hanterare oavsett denna lista. Tom lista = varje administratör är hanterare (standard, matchar beteendet före v0.2.18).",
+          "panel_selected_users": "HA-användare som kan se PillPilot-panelen när Sidofältspanel är satt till 'Valda användare'. Ägaren har alltid åtkomst oavsett denna lista. Notera: sidopanelens menypost är synlig för alla i detta läge — detta är en plattformsbegränsning i HA. Icke tillåtna användare ser ett meddelande om nekad åtkomst när de klickar på panelen.",
+          "language": "Styr panelens UI-strängar (knappar, statusbrickor m.m.). 'auto' följer användarens HA-språk. 'en'/'sv' tvingar en specifik översättning. HA-formulärens översättningar styrs alltid av användarens HA-språk.",
           "medicines_db_url": "URL som integrationen hämtar medicinnamnslistan från när du klickar på Uppdatera. Standard pekar på den gemensamma listan i upstream-repot. Om du har en egen fork klistrar du in raw-URL:en till din medicines_se.json här."
         }
       },
@@ -56,7 +60,9 @@
                 "name": "Medicinnamn (sök eller skriv)",
                 "med_type": "Medicintyp",
                 "unit_count": "Antal per dos (tabletter / droppar / injektioner)",
-                "variant_strength": "Styrka", "variant_form": "Form", "variant_npl_id": "Variant NPL ID",
+                "variant_strength": "Styrka",
+                "variant_form": "Form",
+                "variant_npl_id": "Variant NPL ID",
                 "notes": "Anteckningar",
                 "person_id": "Person (valfritt — lämna tomt för hushåll)"
               }
@@ -112,7 +118,9 @@
                 "name": "Medicinnamn (sök eller skriv)",
                 "med_type": "Medicintyp",
                 "unit_count": "Antal per dos (tabletter / droppar / injektioner)",
-                "variant_strength": "Styrka", "variant_form": "Form", "variant_npl_id": "Variant NPL ID",
+                "variant_strength": "Styrka",
+                "variant_form": "Form",
+                "variant_npl_id": "Variant NPL ID",
                 "notes": "Anteckningar",
                 "person_id": "Person (valfritt — lämna tomt för hushåll)"
               }
@@ -185,9 +193,17 @@
   "selector": {
     "panel_visibility": {
       "options": {
-        "everyone": "Synlig för alla",
         "admins": "Endast administratörer",
+        "selected_users": "Valda användare",
+        "everyone": "Alla",
         "hidden": "Dold"
+      }
+    },
+    "language": {
+      "options": {
+        "auto": "Auto (följer HA)",
+        "en": "English",
+        "sv": "Svenska"
       }
     }
   },

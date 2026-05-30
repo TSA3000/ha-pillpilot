@@ -7,11 +7,15 @@
         "data": {
           "panel_visibility": "Sidebar panel",
           "managers": "Managers",
+          "panel_selected_users": "Selected users for sidebar",
+          "language": "Panel language",
           "medicines_db_url": "Medicine list URL"
         },
         "data_description": {
           "panel_visibility": "Controls whether the PillPilot sidebar entry appears. Each user can independently hide it from their own sidebar via Profile → Edit sidebar regardless of this setting.",
           "managers": "HA users who can create, edit, and delete medicines from the panel. The owner is always implicitly a manager regardless of this list. Empty list = every admin can manage (default, matches pre-v0.2.18 behavior).",
+          "panel_selected_users": "HA users who can see the PillPilot panel when Sidebar panel is set to 'Selected users'. Owner always has access regardless of this list. Note: the sidebar entry is visible to all users in this mode — that's a Home Assistant platform limitation. Non-allowed users see an access-denied placeholder when they click the panel.",
+          "language": "Controls the panel's UI strings (buttons, status badges, etc). 'auto' follows each user's HA language. 'en'/'sv' force a specific translation. HA form translations always follow each user's HA language regardless of this setting.",
           "medicines_db_url": "URL the integration pulls the medicine name list from when you click Refresh. The default points at the upstream community list. If you maintain your own fork, paste the raw GitHub URL of your medicines_se.json here."
         }
       },
@@ -21,12 +25,16 @@
         "data": {
           "panel_visibility": "Sidebar panel",
           "managers": "Managers",
+          "panel_selected_users": "Selected users for sidebar",
+          "language": "Panel language",
           "medicines_db_url": "Medicine list URL",
           "refresh_medicines_now": "Refresh medicine list now"
         },
         "data_description": {
           "panel_visibility": "Controls whether the PillPilot sidebar entry appears. Each user can independently hide it from their own sidebar via Profile → Edit sidebar regardless of this setting.",
           "managers": "HA users who can create, edit, and delete medicines from the panel. The owner is always implicitly a manager regardless of this list. Empty list = every admin can manage (default, matches pre-v0.2.18 behavior).",
+          "panel_selected_users": "HA users who can see the PillPilot panel when Sidebar panel is set to 'Selected users'. Owner always has access regardless of this list. Note: the sidebar entry is visible to all users in this mode — that's a Home Assistant platform limitation. Non-allowed users see an access-denied placeholder when they click the panel.",
+          "language": "Controls the panel's UI strings (buttons, status badges, etc). 'auto' follows each user's HA language. 'en'/'sv' force a specific translation. HA form translations always follow each user's HA language regardless of this setting.",
           "medicines_db_url": "URL the integration pulls the medicine name list from when you click Refresh. The default points at the upstream community list. If you maintain your own fork, paste the raw GitHub URL of your medicines_se.json here.",
           "refresh_medicines_now": "Check this and submit to fetch a fresh medicine list from the URL above. The toggle is one-shot — it clears itself after the refresh runs."
         }
@@ -58,7 +66,9 @@
                 "name": "Medicine name (search or type)",
                 "med_type": "Medicine type",
                 "unit_count": "Per-dose count (number of pills / drops / injections)",
-                "variant_strength": "Strength", "variant_form": "Form", "variant_npl_id": "Variant NPL ID",
+                "variant_strength": "Strength",
+                "variant_form": "Form",
+                "variant_npl_id": "Variant NPL ID",
                 "notes": "Notes",
                 "person_id": "Person (optional — leave blank for household)"
               }
@@ -114,7 +124,9 @@
                 "name": "Medicine name (search or type)",
                 "med_type": "Medicine type",
                 "unit_count": "Per-dose count (number of pills / drops / injections)",
-                "variant_strength": "Strength", "variant_form": "Form", "variant_npl_id": "Variant NPL ID",
+                "variant_strength": "Strength",
+                "variant_form": "Form",
+                "variant_npl_id": "Variant NPL ID",
                 "notes": "Notes",
                 "person_id": "Person (optional — leave blank for household)"
               }
@@ -187,9 +199,17 @@
   "selector": {
     "panel_visibility": {
       "options": {
-        "everyone": "Visible to everyone",
         "admins": "Admins only",
+        "selected_users": "Selected users",
+        "everyone": "Everyone",
         "hidden": "Hidden"
+      }
+    },
+    "language": {
+      "options": {
+        "auto": "Auto (follow HA)",
+        "en": "English",
+        "sv": "Svenska"
       }
     }
   },

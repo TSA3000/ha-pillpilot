@@ -81,8 +81,12 @@ from .const import (
     CONF_MED_VARUNUMMER,
     CONF_MEDICINES_DB_REFRESH_NOW,
     CONF_MEDICINES_DB_URL,
+    CONF_LANGUAGE,
     CONF_MANAGERS,
+    CONF_PANEL_SELECTED_USERS,
     CONF_PANEL_VISIBILITY,
+    DEFAULT_LANGUAGE,
+    LANGUAGE_OPTIONS,
     DEFAULT_PANEL_VISIBILITY,
     DEFAULT_REMIND_WINDOW,
     DOMAIN,
@@ -1142,6 +1146,14 @@ class PillPilotConfigFlow(ConfigFlow, domain=DOMAIN):
             if owner_id and owner_id in managers_selected:
                 managers_selected = [u for u in managers_selected if u != owner_id]
             self._draft[CONF_MANAGERS] = managers_selected
+            # Panel-side selected users — same owner-strip pattern.
+            panel_users = list(user_input.get(CONF_PANEL_SELECTED_USERS) or [])
+            if owner_id and owner_id in panel_users:
+                panel_users = [u for u in panel_users if u != owner_id]
+            self._draft[CONF_PANEL_SELECTED_USERS] = panel_users
+            self._draft[CONF_LANGUAGE] = (
+                user_input.get(CONF_LANGUAGE) or DEFAULT_LANGUAGE
+            )
             self._draft[CONF_MEDICINES_DB_URL] = (
                 user_input.get(CONF_MEDICINES_DB_URL) or DEFAULT_MEDICINES_DB_URL
             )
@@ -1170,6 +1182,26 @@ class PillPilotConfigFlow(ConfigFlow, domain=DOMAIN):
                             options=manager_options,
                             multiple=True,
                             mode=SelectSelectorMode.LIST,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_PANEL_SELECTED_USERS,
+                        default=default_managers,
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=manager_options,
+                            multiple=True,
+                            mode=SelectSelectorMode.LIST,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_LANGUAGE,
+                        default=DEFAULT_LANGUAGE,
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=LANGUAGE_OPTIONS,
+                            translation_key="language",
+                            mode=SelectSelectorMode.DROPDOWN,
                         )
                     ),
                     vol.Optional(
@@ -1224,6 +1256,13 @@ class PillPilotConfigFlow(ConfigFlow, domain=DOMAIN):
             if owner_id and owner_id in managers_selected:
                 managers_selected = [u for u in managers_selected if u != owner_id]
             self._draft[CONF_MANAGERS] = managers_selected
+            panel_users = list(user_input.get(CONF_PANEL_SELECTED_USERS) or [])
+            if owner_id and owner_id in panel_users:
+                panel_users = [u for u in panel_users if u != owner_id]
+            self._draft[CONF_PANEL_SELECTED_USERS] = panel_users
+            self._draft[CONF_LANGUAGE] = (
+                user_input.get(CONF_LANGUAGE) or DEFAULT_LANGUAGE
+            )
             self._draft[CONF_MEDICINES_DB_URL] = (
                 user_input.get(CONF_MEDICINES_DB_URL) or DEFAULT_MEDICINES_DB_URL
             )
@@ -1243,6 +1282,13 @@ class PillPilotConfigFlow(ConfigFlow, domain=DOMAIN):
         default_managers = list(stored_managers)
         if owner_id and owner_id not in default_managers:
             default_managers.insert(0, owner_id)
+        # Same pattern for the panel selected-users list.
+        stored_panel_users = list(
+            existing.data.get(CONF_PANEL_SELECTED_USERS) or []
+        )
+        default_panel_users = list(stored_panel_users)
+        if owner_id and owner_id not in default_panel_users:
+            default_panel_users.insert(0, owner_id)
         return self.async_show_form(
             step_id="reconfigure",
             description_placeholders={
@@ -1275,6 +1321,28 @@ class PillPilotConfigFlow(ConfigFlow, domain=DOMAIN):
                             options=manager_options,
                             multiple=True,
                             mode=SelectSelectorMode.LIST,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_PANEL_SELECTED_USERS,
+                        default=default_panel_users,
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=manager_options,
+                            multiple=True,
+                            mode=SelectSelectorMode.LIST,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_LANGUAGE,
+                        default=existing.data.get(
+                            CONF_LANGUAGE, DEFAULT_LANGUAGE
+                        ),
+                    ): SelectSelector(
+                        SelectSelectorConfig(
+                            options=LANGUAGE_OPTIONS,
+                            translation_key="language",
+                            mode=SelectSelectorMode.DROPDOWN,
                         )
                     ),
                     vol.Optional(
