@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.19-beta1] — 2026-05-30
+
+Beta release. Access control: per-medicine visibility.
+
+- New per-medicine `visibility` setting with four modes: `everyone` (default), `linked_person`, `admins_only`, `specific_users`. Owner and managers always pass regardless of mode — visibility is the gate for everyone else.
+- Visibility section added to the panel's Add and Edit medicine modal. When `specific_users` is selected, a multi-select of HA users (lazy-fetched via the new `pillpilot/get_users` WS endpoint) appears with the owner pre-checked as an informational hint.
+- Panel filters its rendering through `_canSeeMedicine`. The `_getMedicines` cache key now includes the current user_id so the filter result invalidates when sessions change.
+- WS mutating commands (`update_medicine`, `delete_medicine`) carry a new `@_require_can_see_medicine` decorator stacked after `@_require_manager`. Both must pass: a manager who can't see the medicine cannot edit it either.
+- Backend strips owner_id from `visibility_users` on save (v0.2.18 pattern applied here too). Owner remains implicitly allowed via `user.is_owner`.
+- Sensors stay globally readable — HA's entity registry permissions are admin / non-admin only, so per-user filtering is panel-level. Sensor gating for hard privacy is Tier 3, deferred.
+- HA Settings reconfigure flow does not yet expose visibility — panel-only for this beta. Pre-v0.2.19 medicines keep `everyone` as their effective mode.
+- New constants in `const.py`: `CONF_MED_VISIBILITY`, `CONF_MED_VISIBILITY_USERS`, `VIS_EVERYONE`, `VIS_LINKED_PERSON`, `VIS_ADMINS_ONLY`, `VIS_SPECIFIC_USERS`, `DEFAULT_MED_VISIBILITY`, `MED_VISIBILITY_OPTIONS`.
+
 ## [0.2.18] — 2026-05-17
 
 - New `Managers` config option in the install and reconfigure flows: multi-select of HA users authorized to create / edit / delete medicines from the panel. Built dynamically from `hass.auth.async_get_users()` with role hints (`(owner)` / `(admin)` / `(user)`) in each label.

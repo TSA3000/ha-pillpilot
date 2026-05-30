@@ -880,6 +880,31 @@ const STYLES = `
     background: var(--secondary-background-color, rgba(127,127,127,0.12));
     color: var(--primary-text-color, inherit);
   }
+  /* v0.2.19: visibility user multi-select. Vertical stack of
+     checkboxes; one per HA user. Owner is rendered pre-checked as
+     an informational hint. */
+  .visibility-user-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 4px 0 0 0;
+  }
+  .visibility-user-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    padding: 2px 0;
+    cursor: pointer;
+  }
+  .visibility-user-row input[type="checkbox"] {
+    margin: 0;
+  }
+  .form-hint {
+    font-size: 12px;
+    color: var(--secondary-text-color, #888);
+    margin-top: 4px;
+  }
   /* v0.2.0-beta3.6 weekday chip selector + presets. Replaces the
      beta3 .day-checkboxes UI — same data model (draft.daysOfWeek
      Set of "0".."6"), better UX (one-tap presets for the common
@@ -1495,17 +1520,61 @@ class PillPilotPanel extends HTMLElement {
     // check is a correct invalidator — and across a single render
     // cycle (`_signature`, `_renderFull`, `_findPersonGroup`) we
     // walk the entity table once instead of three or four times.
-    if (this._cachedMedicinesFor === this._hass.states) {
+    // v0.2.19: cache key also includes the current user — the
+    // filter result depends on hass.user.id and changes between
+    // user sessions.
+    const userId = this._hass.user ? this._hass.user.id : null;
+    if (
+      this._cachedMedicinesFor === this._hass.states
+      && this._cachedMedicinesUser === userId
+    ) {
       return this._cachedMedicines;
     }
-    this._cachedMedicines = Object.values(this._hass.states).filter(
+    const all = Object.values(this._hass.states).filter(
       (s) =>
         s.entity_id.startsWith("sensor.") &&
         s.attributes &&
         s.attributes.medicine_id !== undefined
     );
+    this._cachedMedicines = all.filter((s) => this._canSeeMedicine(s));
     this._cachedMedicinesFor = this._hass.states;
+    this._cachedMedicinesUser = userId;
     return this._cachedMedicines;
+  }
+
+  // v0.2.19: client-side panel-level visibility check. Sensors are
+  // global in HA; this filters which ones the panel renders. Mutating
+  // WS commands enforce the same check server-side so a non-allowed
+  // user can't edit a medicine even by hand-crafting a WS payload.
+  _canSeeMedicine(sensorState) {
+    const u = this._hass && this._hass.user;
+    if (!u) return false;
+    if (u.is_owner || u.is_admin) return true;
+    const attrs = sensorState.attributes || {};
+    const mode = attrs.visibility || "everyone";
+    if (mode === "everyone") return true;
+    if (mode === "admins_only") return false;
+    if (mode === "specific_users") {
+      const list = attrs.visibility_users || [];
+      return list.includes(u.id);
+    }
+    if (mode === "linked_person") {
+      // Resolve each prescription's person_id → HA user_id and
+      // compare against the current user. HA exposes the link as
+      // an attribute on the person entity.
+      const prescriptions = attrs.prescriptions || [];
+      for (const p of prescriptions) {
+        const personEntity = p.person_id;
+        if (!personEntity) continue;
+        const personState = this._hass.states[personEntity];
+        if (!personState) continue;
+        const linkedUserId = (personState.attributes || {}).user_id;
+        if (linkedUserId && linkedUserId === u.id) return true;
+      }
+      return false;
+    }
+    // Unknown mode — fail closed.
+    return false;
   }
 
   // --- medicines DB cache (drug-name autocomplete) ----------------------
@@ -2481,6 +2550,13 @@ class PillPilotPanel extends HTMLElement {
         atc_code: a.atc_code || "",
         npl_id: a.npl_id || "",
         varunummer: a.varunummer || "",
+        // v0.2.19: per-medicine visibility. Missing keys on pre-v0.2.19
+        // sensors fall through to "everyone" / empty list, matching the
+        // backend default.
+        visibility: a.visibility || "everyone",
+        visibility_users: Array.isArray(a.visibility_users)
+          ? [...a.visibility_users]
+          : [],
       },
       prescriptions,
     };
@@ -2544,6 +2620,8 @@ class PillPilotPanel extends HTMLElement {
         atc_code: "",
         npl_id: "",
         varunummer: "",
+        visibility: "everyone",
+        visibility_users: [],
       },
       prescriptions: [],
     };
@@ -2638,6 +2716,12 @@ class PillPilotPanel extends HTMLElement {
         atc_code: (draft.drug.atc_code || "").trim(),
         npl_id: (draft.drug.npl_id || "").trim(),
         varunummer: (draft.drug.varunummer || "").trim(),
+        // v0.2.19: per-medicine visibility. Sent on every save so the
+        // backend can persist (or default to "everyone" on missing key).
+        visibility: draft.drug.visibility || "everyone",
+        visibility_users: Array.isArray(draft.drug.visibility_users)
+          ? draft.drug.visibility_users
+          : [],
       },
       prescriptions: draft.prescriptions.map(prescriptionToWire),
     };
@@ -3028,6 +3112,8 @@ class PillPilotPanel extends HTMLElement {
 
       ${variantsHtml}
 
+      ${this._renderVisibilitySection(draft, drugErrors, errMsg)}
+
       <div class="form-section">
         <div class="form-section-titlerow">
           <h3 class="form-section-title">Prescriptions</h3>
@@ -3039,6 +3125,98 @@ class PillPilotPanel extends HTMLElement {
         <button class="modal-btn modal-btn-secondary add-prescription-btn" data-action="add-prescription">+ Add prescription</button>
       </div>
     `;
+  }
+
+  // v0.2.19: per-medicine visibility section in the Add/Edit modal.
+  // Renders a mode dropdown plus, when mode=specific_users, a list of
+  // HA users (lazy-fetched via pillpilot/get_users). Owner is
+  // pre-checked with " (owner)" label hint, mirroring the HA Settings
+  // Managers selector — owner_id is stripped on save server-side, so
+  // the stored list semantically represents additional users only.
+  _renderVisibilitySection(draft, drugErrors, errMsg) {
+    const mode = draft.drug.visibility || "everyone";
+    const modeOptions = [
+      ["everyone", "Everyone"],
+      ["linked_person", "Linked person only"],
+      ["admins_only", "Admins only"],
+      ["specific_users", "Specific users"],
+    ]
+      .map(
+        ([v, label]) =>
+          `<option value="${v}" ${mode === v ? "selected" : ""}>${escapeHtml(label)}</option>`
+      )
+      .join("");
+    let usersBlock = "";
+    if (mode === "specific_users") {
+      this._ensurePanelUsers();
+      const users = this._panelUsers;
+      if (users === undefined) {
+        usersBlock = `<div class="form-hint">Loading user list…</div>`;
+      } else if (users === null) {
+        usersBlock = `<div class="form-hint">Could not load user list — see browser console.</div>`;
+      } else {
+        const selected = new Set(draft.drug.visibility_users || []);
+        const checkboxes = users
+          .map((u) => {
+            const isOwner = u.role === "owner";
+            const isChecked = isOwner || selected.has(u.id);
+            const roleSuffix = ` (${u.role})`;
+            const labelText = `${u.name}${roleSuffix}`;
+            return `
+              <label class="visibility-user-row">
+                <input
+                  type="checkbox"
+                  data-visibility-user-id="${escapeHtml(u.id)}"
+                  ${isChecked ? "checked" : ""}
+                >
+                <span>${escapeHtml(labelText)}</span>
+              </label>
+            `;
+          })
+          .join("");
+        usersBlock = `
+          <div class="visibility-user-list">${checkboxes}</div>
+          <div class="form-hint">Owner always has access regardless of selection.</div>
+        `;
+      }
+    }
+    return `
+      <div class="form-section">
+        <h3 class="form-section-title">Visibility</h3>
+        <label class="form-field">
+          <span class="form-label">Who can see this medicine in the panel?</span>
+          <select class="form-input" data-edit-field="drug.visibility">${modeOptions}</select>
+        </label>
+        ${usersBlock}
+      </div>
+    `;
+  }
+
+  // Lazy-fetch the HA user list via pillpilot/get_users on first
+  // demand. Sets _panelUsers to the array on success or to null on
+  // error so the renderer can distinguish "still loading" from
+  // "fetch failed". Triggers a re-render when the result lands.
+  _ensurePanelUsers() {
+    if (this._panelUsers !== undefined) return;
+    if (this._panelUsersFetching) return;
+    this._panelUsersFetching = true;
+    this._panelUsers = undefined;
+    this._hass
+      .callWS({ type: "pillpilot/get_users" })
+      .then((res) => {
+        this._panelUsers = (res && res.users) || [];
+        this._panelUsersFetching = false;
+        this._lastSig = null;
+        this._render();
+      })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("pillpilot: get_users failed", err);
+        this._panelUsers = null;
+        this._panelUsersFetching = false;
+        this._lastSig = null;
+        this._render();
+      });
   }
 
   // One row in the prescriptions list inside the Add/Edit main modal.
@@ -3540,6 +3718,36 @@ class PillPilotPanel extends HTMLElement {
         } else {
           this._editFormDraft[path] = value;
         }
+        // v0.2.19: visibility mode flips the form layout (the user
+        // multi-select appears only for specific_users), so force a
+        // re-render on change.
+        if (path === "drug.visibility") {
+          this._lastSig = null;
+          this._render();
+        }
+      });
+    });
+
+    // v0.2.19: visibility user multi-select. Each checkbox carries the
+    // user_id in data-visibility-user-id; toggling updates the
+    // visibility_users array on the draft. Owner checkbox is rendered
+    // pre-checked as an informational hint — toggling it has no
+    // backend effect because owner_id is stripped server-side.
+    root.querySelectorAll("[data-visibility-user-id]").forEach((cb) => {
+      cb.addEventListener("change", (e) => {
+        if (!this._editFormDraft) return;
+        const userId = e.currentTarget.dataset.visibilityUserId;
+        const checked = !!e.currentTarget.checked;
+        const list = Array.isArray(this._editFormDraft.drug.visibility_users)
+          ? [...this._editFormDraft.drug.visibility_users]
+          : [];
+        const idx = list.indexOf(userId);
+        if (checked && idx === -1) {
+          list.push(userId);
+        } else if (!checked && idx !== -1) {
+          list.splice(idx, 1);
+        }
+        this._editFormDraft.drug.visibility_users = list;
       });
     });
 

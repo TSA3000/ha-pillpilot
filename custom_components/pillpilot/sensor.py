@@ -227,6 +227,11 @@ class MedicineSensor(CoordinatorEntity[MedicineCoordinator], SensorEntity):
             "last_taken_at": _iso(s.last_taken_at),
             "person_id": s.person_id,         # may be None for household
             "person_name": s.person_name,     # friendly name, or None
+            # v0.2.19: panel-level visibility metadata. The panel filters
+            # its render by checking these against hass.user. Sensor
+            # state stays globally readable (HA platform limitation).
+            "visibility": s.visibility,
+            "visibility_users": list(s.visibility_users),
             # Per-slot status for today's doses. The
             # panel uses this to decide whether each slot's row shows
             # action buttons or a "✓ Taken at HH:MM" label.

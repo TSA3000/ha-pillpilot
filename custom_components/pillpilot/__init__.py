@@ -17,6 +17,9 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import (
     CONF_MANAGERS,
     CONF_MED_ATC_CODE,
+    CONF_MED_PERSON,
+    CONF_MED_VISIBILITY,
+    CONF_MED_VISIBILITY_USERS,
     CONF_MED_ID,
     CONF_MED_NAME,
     CONF_MED_NPL_ID,
@@ -32,6 +35,10 @@ from .const import (
     SERVICE_SNOOZE,
     SERVICE_UNMARK_TAKEN,
     SUBENTRY_TYPE_MEDICINE,
+    VIS_ADMINS_ONLY,
+    VIS_EVERYONE,
+    VIS_LINKED_PERSON,
+    VIS_SPECIFIC_USERS,
 )
 from .coordinator import MedicineCoordinator
 from .config_flow import (
@@ -781,6 +788,159 @@ def _require_manager(func):
     return wrapped
 
 
+# ---------------------------------------------------------------------------
+# Per-medicine visibility (v0.2.19)
+# ---------------------------------------------------------------------------
+#
+# _can_see_medicine answers "is this user allowed to see / mutate this
+# specific medicine". Owner and managers always pass — they're the
+# trusted admins of the household. Beyond that, the medicine's
+# CONF_MED_VISIBILITY mode decides:
+#
+#   * everyone        — anyone passes.
+#   * linked_person   — passes if the user's person entity is the
+#                       person_id of any prescription on the medicine.
+#   * admins_only     — passes if user.is_admin (owner / managers
+#                       caught earlier, this only adds plain admins).
+#   * specific_users  — passes if user.id is in
+#                       CONF_MED_VISIBILITY_USERS.
+#
+# Pre-v0.2.19 medicines have no visibility key — defaults to everyone.
+
+
+def _resolve_person_user_id(hass: HomeAssistant, person_entity_id: str | None) -> str | None:
+    """Return the HA user_id linked to a person entity, or None.
+
+    A person entity carries its linked user as ``attributes.user_id``.
+    Missing entity, missing attribute, or unlinked person all return
+    None.
+    """
+    if not person_entity_id:
+        return None
+    state = hass.states.get(person_entity_id)
+    if state is None:
+        return None
+    return state.attributes.get("user_id")
+
+
+def _can_see_medicine(
+    hass: HomeAssistant,
+    user,
+    subentry_data: dict[str, Any],
+) -> bool:
+    """Return True if ``user`` may see / mutate the medicine subentry.
+
+    Owner and managers always pass (trusted-adult policy). For other
+    users, the medicine's CONF_MED_VISIBILITY mode decides.
+    """
+    if user is None:
+        return False
+    if _is_pillpilot_manager(hass, user):
+        return True
+    mode = subentry_data.get(CONF_MED_VISIBILITY, VIS_EVERYONE)
+    if mode == VIS_EVERYONE:
+        return True
+    if mode == VIS_ADMINS_ONLY:
+        return bool(user.is_admin)
+    if mode == VIS_LINKED_PERSON:
+        for p in subentry_data.get("prescriptions") or []:
+            linked = _resolve_person_user_id(hass, p.get(CONF_MED_PERSON))
+            if linked and linked == user.id:
+                return True
+        return False
+    if mode == VIS_SPECIFIC_USERS:
+        allowed = subentry_data.get(CONF_MED_VISIBILITY_USERS) or []
+        return user.id in allowed
+    # Unknown mode — fail closed.
+    return False
+
+
+def _find_medicine_subentry(
+    hass: HomeAssistant, medicine_id: str
+) -> tuple[ConfigEntry | None, ConfigSubentry | None]:
+    """Locate ``(entry, subentry)`` for a medicine_id, or (None, None)."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        sub = entry.subentries.get(medicine_id)
+        if sub is not None and sub.subentry_type == SUBENTRY_TYPE_MEDICINE:
+            return entry, sub
+    return None, None
+
+
+def _require_can_see_medicine(func):
+    """WS decorator: gate handler on ``_can_see_medicine`` for the
+    medicine_id in ``msg``. Applies on top of @_require_manager — both
+    checks must pass for write paths.
+    """
+    @functools.wraps(func)
+    async def wrapped(
+        hass: HomeAssistant,
+        connection: websocket_api.ActiveConnection,
+        msg: dict,
+    ) -> None:
+        medicine_id = msg.get("medicine_id")
+        _, sub = _find_medicine_subentry(hass, medicine_id) if medicine_id else (None, None)
+        if sub is not None and not _can_see_medicine(hass, connection.user, sub.data):
+            raise Unauthorized()
+        return await func(hass, connection, msg)
+    return wrapped
+
+
+async def _resolve_owner_user_id(hass: HomeAssistant) -> str | None:
+    """Return the HA owner's user_id, or None if no owner is set.
+
+    Used to strip owner_id from medicine visibility_users (and the
+    Managers list, v0.2.18 pattern) on save. Owner is always
+    implicitly allowed via ``user.is_owner``, so storing the id is
+    redundant and creates stale references if the owner account is
+    later deleted.
+    """
+    for u in await hass.auth.async_get_users():
+        if not u.system_generated and u.is_owner:
+            return u.id
+    return None
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "pillpilot/get_users",
+    }
+)
+@_require_manager
+@websocket_api.async_response
+async def _ws_get_users(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict,
+) -> None:
+    """Return the HA user list for the panel's visibility selector.
+
+    Gated on manager status — only users who can edit medicines need
+    to see the picker. System-generated users (supervisor, etc.) are
+    excluded. The owner is included so the panel can show the same
+    "(owner)" hint as the HA Settings form.
+    """
+    users = await hass.auth.async_get_users()
+    out: list[dict[str, Any]] = []
+    for u in users:
+        if u.system_generated:
+            continue
+        if u.is_owner:
+            role = "owner"
+        elif u.is_admin:
+            role = "admin"
+        else:
+            role = "user"
+        out.append(
+            {
+                "id": u.id,
+                "name": u.name or u.id,
+                "role": role,
+            }
+        )
+    out.sort(key=lambda d: d["name"].lower())
+    connection.send_result(msg["id"], {"users": out})
+
+
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "pillpilot/update_medicine",
@@ -789,6 +949,7 @@ def _require_manager(func):
     }
 )
 @_require_manager
+@_require_can_see_medicine
 @websocket_api.async_response
 async def _ws_update_medicine(
     hass: HomeAssistant,
@@ -803,14 +964,7 @@ async def _ws_update_medicine(
 
     # 1. Locate the subentry by medicine_id (which IS the subentry_id —
     # see _medicines_from_subentries).
-    target_entry: ConfigEntry | None = None
-    target_subentry: ConfigSubentry | None = None
-    for entry in hass.config_entries.async_entries(DOMAIN):
-        sub = entry.subentries.get(medicine_id)
-        if sub is not None and sub.subentry_type == SUBENTRY_TYPE_MEDICINE:
-            target_entry = entry
-            target_subentry = sub
-            break
+    target_entry, target_subentry = _find_medicine_subentry(hass, medicine_id)
 
     if target_entry is None or target_subentry is None:
         connection.send_result(
@@ -835,6 +989,17 @@ async def _ws_update_medicine(
         med[CONF_MED_PRESCRIPTIONS],
         dict(target_subentry.data),
     )
+    # v0.2.19: per-medicine visibility. The payload carries it on the
+    # drug dict; missing key → keep existing stored value, falling
+    # through to the default (everyone) for pre-v0.2.19 entries.
+    if CONF_MED_VISIBILITY in drug:
+        new_data[CONF_MED_VISIBILITY] = drug.get(CONF_MED_VISIBILITY) or VIS_EVERYONE
+    if CONF_MED_VISIBILITY_USERS in drug:
+        users = list(drug.get(CONF_MED_VISIBILITY_USERS) or [])
+        owner_id_strip = await _resolve_owner_user_id(hass)
+        if owner_id_strip and owner_id_strip in users:
+            users = [u for u in users if u != owner_id_strip]
+        new_data[CONF_MED_VISIBILITY_USERS] = users
     # CONF_MED_ID is not persisted in subentry data — the canonical
     # identity is the subentry_id, which HA owns. Strip any stale value
     # in case the merge carried one over from older code paths.
@@ -935,6 +1100,16 @@ async def _ws_create_medicine(
         )
         return
 
+    # v0.2.19: per-medicine visibility from the payload, with safe
+    # defaults so pre-v0.2.19 panels (which don't send these fields)
+    # still create medicines without errors.
+    med[CONF_MED_VISIBILITY] = drug.get(CONF_MED_VISIBILITY) or VIS_EVERYONE
+    users = list(drug.get(CONF_MED_VISIBILITY_USERS) or [])
+    owner_id_strip = await _resolve_owner_user_id(hass)
+    if owner_id_strip and owner_id_strip in users:
+        users = [u for u in users if u != owner_id_strip]
+    med[CONF_MED_VISIBILITY_USERS] = users
+
     # 3. Persist as a new ConfigSubentry. HA assigns subentry_id on
     # construction; that is the canonical medicine_id and is what the
     # rest of the integration looks up by. CONF_MED_ID is not stored in
@@ -993,6 +1168,7 @@ async def _ws_create_medicine(
     }
 )
 @_require_manager
+@_require_can_see_medicine
 @websocket_api.async_response
 async def _ws_delete_medicine(
     hass: HomeAssistant,
@@ -1114,4 +1290,5 @@ def _register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, _ws_create_medicine)
     websocket_api.async_register_command(hass, _ws_delete_medicine)
     websocket_api.async_register_command(hass, _ws_get_medicines_db)
+    websocket_api.async_register_command(hass, _ws_get_users)
     domain_data["ws_commands_registered"] = True

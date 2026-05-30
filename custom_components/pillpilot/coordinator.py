@@ -167,6 +167,12 @@ class MedicineState:
     med_type: str | None
     enrichment: dict[str, dict[str, Any]]
     prescriptions: list[PrescriptionState]
+    # v0.2.19: panel-level visibility metadata. The panel filters
+    # _getMedicines() against these plus the current user. Sensor
+    # state stays globally readable — HA entity permissions can't
+    # filter per-user.
+    visibility: str = "everyone"
+    visibility_users: tuple[str, ...] = ()
     last_state: str = STATE_UPCOMING
 
     # ---- backward-compat properties (read from prescriptions[0]) -----
@@ -698,6 +704,8 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
                 med_type=med.get(CONF_MED_TYPE),
                 enrichment=enrichment,
                 prescriptions=prescription_states,
+                visibility=med.get("visibility") or "everyone",
+                visibility_users=tuple(med.get("visibility_users") or []),
                 last_state=agg_state,
             )
 

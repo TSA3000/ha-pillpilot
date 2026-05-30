@@ -193,3 +193,37 @@ PANEL_VISIBILITY_OPTIONS = [
 # owner anyway, so an explicit user.is_owner check is the source of truth).
 # ---------------------------------------------------------------------------
 CONF_MANAGERS = "managers"
+
+# ---------------------------------------------------------------------------
+# Per-medicine visibility (added in v0.2.19)
+#
+# Stored on each medicine subentry's data dict. Controls who can see the
+# medicine in the panel and who can mutate it via the WS commands.
+# Sensors stay global — HA's entity-registry permissions are admin/non-admin
+# only, so a non-allowed user can still read sensor state via Developer
+# Tools. Tier 2 stops at panel-level visibility; sensor gating is Tier 3.
+#
+# Modes:
+#   * everyone        — default. Backward-compat for pre-v0.2.19 entries
+#                       that don't carry the field at all.
+#   * linked_person   — only HA users whose person entity is the
+#                       person_id of any prescription on this medicine,
+#                       plus owner and managers.
+#   * admins_only     — only owner, managers, and admins.
+#   * specific_users  — explicit allowlist in CONF_MED_VISIBILITY_USERS.
+#                       Owner and managers always pass; stored list is
+#                       additional users only (owner stripped on save).
+# ---------------------------------------------------------------------------
+CONF_MED_VISIBILITY = "visibility"
+CONF_MED_VISIBILITY_USERS = "visibility_users"
+VIS_EVERYONE = "everyone"
+VIS_LINKED_PERSON = "linked_person"
+VIS_ADMINS_ONLY = "admins_only"
+VIS_SPECIFIC_USERS = "specific_users"
+DEFAULT_MED_VISIBILITY = VIS_EVERYONE
+MED_VISIBILITY_OPTIONS = [
+    VIS_EVERYONE,
+    VIS_LINKED_PERSON,
+    VIS_ADMINS_ONLY,
+    VIS_SPECIFIC_USERS,
+]
