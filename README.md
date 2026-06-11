@@ -20,7 +20,9 @@ Home Assistant integration for medication reminders with a custom side panel for
 
 After install, go to **Settings → Devices & services → PillPilot** card and click **+ Add medicine** for each medicine. Pick from the bundled Swedish medicine list (autocomplete with fuzzy matching on common misspellings and alternate names) or type a name not in the list. Set per-dose count, strength, frequency (daily / weekly / monthly / every N days), times, and optionally assign to a person.
 
-Open the side panel from the HA sidebar to see what's due, mark doses taken, undo, snooze, or skip.
+Open the side panel from the HA sidebar to see what's due, mark doses taken, undo, snooze, or skip. Medicines can also be added and edited directly in the panel.
+
+The integration's **Configure** dialog (on the PillPilot card) holds the household-level settings: sidebar panel visibility, the Managers list, per-panel language, and the medicine list URL.
 
 ## Sensor output
 
@@ -38,6 +40,8 @@ last_taken_at: "2026-05-04T07:32:18+02:00"
 varunummer: "165432"
 npl_id: "19710716000023"
 atc_code: "H03AA01"
+visibility: "everyone"
+visibility_users: []
 today_doses:
   - scheduled_for: "2026-05-04T07:30:00+02:00"
     state: "taken"
@@ -122,6 +126,31 @@ automation:
 
 Filter by person, medicine, or time of day with a `condition:` block on `trigger.event.data.person_id`, `trigger.event.data.medicine_id`, or any other field from the events table above.
 
+## Access control
+
+Three layers, all optional — a fresh install behaves like a single-household tracker where every HA user sees everything and every admin can manage.
+
+**Managers** — the Configure dialog has a Managers list: the HA users allowed to create, edit, and delete medicines (from the panel or via the websocket commands). The owner is always a manager. An empty list means every HA admin can manage, which is the default and matches the behavior of older versions. Dose actions (Take / Skip / Snooze / Undo) are not gated — everyone can record their own doses, and mobile notification actions keep working for all users.
+
+**Per-medicine visibility** — each medicine has a Visibility setting in the panel's Add / Edit dialog:
+
+| Mode | Who sees the medicine in the panel |
+| --- | --- |
+| Everyone | Anyone with panel access (default) |
+| Linked person only | HA users whose person entity is on one of the medicine's prescriptions |
+| Admins only | HA admins |
+| Specific users | An explicit list you pick |
+
+Owner and managers always see every medicine. The same check is enforced on the backend for edit and delete, so it isn't just cosmetic filtering.
+
+**Sidebar panel visibility** — who gets the PillPilot sidebar entry: Admins only, Selected users, Everyone, or Hidden. In Selected users mode, Home Assistant's panel API can't hide the sidebar entry per-user, so the entry is visible to everyone — users not on the list get an access-denied screen when they open it, and the management commands stay gated on the backend.
+
+Note: sensor entities remain readable by any logged-in HA user regardless of these settings (for example via Developer Tools). Home Assistant's entity permissions don't support per-user filtering. See [PRIVACY.md](PRIVACY.md).
+
+## Panel language
+
+The panel UI follows each user's Home Assistant language by default (English and Swedish are available). The Configure dialog can pin it to one language for everyone. The HA settings dialogs use Home Assistant's own translation system and follow the HA language as usual.
+
 ## Services
 
 | Service | Purpose |
@@ -129,10 +158,13 @@ Filter by person, medicine, or time of day with a `condition:` block on `trigger
 | `pillpilot.mark_taken` | Record a taken dose |
 | `pillpilot.skip` | Skip a scheduled dose |
 | `pillpilot.snooze` | Reschedule a dose for later |
-| `pillpilot.unmark_taken` | Undo a `mark_taken` (for hover-undo, per-person bulk undo) |
+| `pillpilot.unmark_taken` | Undo a `mark_taken` (hover-undo) |
+| `pillpilot.mark_taken_bulk` | Record several doses as taken in one call — one save and one refresh for the whole set |
+| `pillpilot.snooze_bulk` | Snooze several doses by the same number of minutes in one call |
+| `pillpilot.unmark_taken_bulk` | Undo several taken doses in one call |
 | `pillpilot.refresh_medicines_database` | Fetch a new copy of the medicines list |
 
-All take a `medicine_id` (and optional `when` for retroactive marking). See `services.yaml` for full schemas.
+Single-dose services take a `medicine_id` (and optional `when` for retroactive marking); bulk services take an `items` list. The panel's Take all / Take due / Take missed buttons and bulk undo use the bulk services. See `services.yaml` for full schemas.
 
 ## Architecture
 
@@ -198,10 +230,13 @@ The export covers names but doesn't carry common misspellings or alternate gener
 - Edit button on medicine cards goes to the integration page, not the subentry's reconfigure dialog directly.
 - No PRN ("as needed") medicines — schedule-based only.
 - Snooze is "schedule a future re-fire," not "suppress the original."
+- In Selected users sidebar mode, the sidebar entry is visible to all users (Home Assistant's panel API has no per-user registration). Non-allowed users get an access-denied screen instead of the panel.
+- Per-medicine visibility filters the panel and gates edits, but sensor entities stay readable by any logged-in HA user — Home Assistant has no per-user entity permissions.
+- Per-medicine visibility can currently only be set from the panel's Add / Edit dialog, not from the medicine's reconfigure dialog in HA Settings.
 
 ## Privacy
 
-PillPilot stores everything locally on your Home Assistant instance — nothing is sent to a remote server. That's a real privacy advantage over cloud-based medication trackers, but the data is plaintext on disk, and Home Assistant's recorder logs medicine names, dose schedules, and dose history to its database by default. Anyone with an HA login (not just admins) can see medicine entities, attributes, and history graphs.
+PillPilot stores everything locally on your Home Assistant instance — nothing is sent to a remote server. That's a real privacy advantage over cloud-based medication trackers, but the data is plaintext on disk, and Home Assistant's recorder logs medicine names, dose schedules, and dose history to its database by default. Anyone with an HA login (not just admins) can see medicine entities, attributes, and history graphs. The per-medicine visibility setting hides medicines in the PillPilot panel, but it can't hide the underlying sensors.
 
 The single biggest thing you can do: turn on backup encryption if you back up your HA config to anywhere except a trusted local disk. Optional second step — exclude PillPilot sensors from the recorder if you don't need the in-HA history graph:
 
