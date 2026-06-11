@@ -46,12 +46,12 @@ const MED_TYPE_DROPS = "drops";
 const MED_TYPE_INJECTION = "injection";
 
 const STATE_LABELS = {
-  [STATE_DUE]: { text: "due now", kind: "warning" },
-  [STATE_UPCOMING]: { text: "upcoming", kind: "info" },
-  [STATE_TAKEN]: { text: "taken", kind: "success" },
-  [STATE_MISSED]: { text: "missed", kind: "error" },
-  [STATE_SKIPPED]: { text: "skipped", kind: "neutral" },
-  [STATE_SNOOZED]: { text: "snoozed", kind: "info" },
+  [STATE_DUE]: { key: "state_due_now", kind: "warning" },
+  [STATE_UPCOMING]: { key: "state_upcoming", kind: "info" },
+  [STATE_TAKEN]: { key: "state_taken", kind: "success" },
+  [STATE_MISSED]: { key: "state_missed", kind: "error" },
+  [STATE_SKIPPED]: { key: "state_skipped", kind: "neutral" },
+  [STATE_SNOOZED]: { key: "state_snoozed", kind: "info" },
 };
 
 // v0.2.19: panel UI strings keyed for translation. The English values
@@ -91,6 +91,53 @@ const STRINGS = {
     state_missed: "missed",
     state_skipped: "skipped",
     state_snoozed: "snoozed",
+    take: "Take",
+    skip: "Skip",
+    snooze: "Snooze",
+    edit: "Edit",
+    delete_medicine: "Delete medicine",
+    undo_last_action: "Undo last action",
+    st_taken: "✓ Taken",
+    st_taken_at: "✓ Taken at {at}",
+    st_skipped: "⊘ Skipped",
+    st_skipped_at: "⊘ Skipped at {at}",
+    st_snoozed: "⏰ Snoozed",
+    st_snoozed_until: "⏰ Snoozed until {at}",
+    never: "never",
+    just_now: "just now",
+    mins_ago: "{n}m ago",
+    hours_ago: "{n}h ago",
+    days_ago: "{n}d ago",
+    last_taken: "Last taken",
+    sched_daily: "Daily",
+    sched_weekly: "Weekly ({days})",
+    sched_monthly: "Monthly",
+    sched_monthly_days: "Monthly ({days})",
+    sched_every_n_days: "Every {n} days",
+    sched_every_n_days_generic: "Every N days",
+    sched_from: " from {date}",
+    sched_until: " · until {date}",
+    weekdays_short: "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
+    skip_day: "(skip)",
+    sort_name_asc: "Sort: Name (A–Z)",
+    sort_name_desc: "Sort: Name (Z–A)",
+    sort_status: "Sort: Status (due first)",
+    sort_next: "Sort: Next dose (soonest)",
+    sort_last_taken: "Sort: Last taken (recent)",
+    col_name: "Name",
+    col_status: "Status",
+    col_dose: "Dose",
+    col_schedule: "Schedule",
+    col_last_taken: "Last taken",
+    no_prescriptions: "No prescriptions yet — add one to get started.",
+    vis_question: "Who can see this medicine in the panel?",
+    vis_everyone: "Everyone",
+    vis_linked: "Linked person only",
+    vis_admins: "Admins only",
+    vis_specific: "Specific users",
+    vis_loading_users: "Loading user list…",
+    vis_users_failed: "Could not load user list — see browser console.",
+    vis_owner_hint: "Owner always has access regardless of selection.",
   },
   sv: {
     loading: "Laddar…",
@@ -122,6 +169,82 @@ const STRINGS = {
     state_missed: "missad",
     state_skipped: "hoppad",
     state_snoozed: "snoozad",
+    take: "Ta",
+    skip: "Hoppa över",
+    snooze: "Snooza",
+    edit: "Redigera",
+    delete_medicine: "Ta bort medicin",
+    undo_last_action: "Ångra senaste åtgärd",
+    st_taken: "✓ Tagen",
+    st_taken_at: "✓ Tagen kl. {at}",
+    st_skipped: "⊘ Överhoppad",
+    st_skipped_at: "⊘ Överhoppad kl. {at}",
+    st_snoozed: "⏰ Snoozad",
+    st_snoozed_until: "⏰ Snoozad till {at}",
+    never: "aldrig",
+    just_now: "nyss",
+    mins_ago: "{n} min sedan",
+    hours_ago: "{n} tim sedan",
+    days_ago: "{n} d sedan",
+    last_taken: "Senast tagen",
+    sched_daily: "Dagligen",
+    sched_weekly: "Veckovis ({days})",
+    sched_monthly: "Månadsvis",
+    sched_monthly_days: "Månadsvis ({days})",
+    sched_every_n_days: "Var {n}:e dag",
+    sched_every_n_days_generic: "Var N:e dag",
+    sched_from: " från {date}",
+    sched_until: " · till {date}",
+    weekdays_short: "Mån,Tis,Ons,Tor,Fre,Lör,Sön",
+    skip_day: "(hoppas över)",
+    sort_name_asc: "Sortera: Namn (A–Ö)",
+    sort_name_desc: "Sortera: Namn (Ö–A)",
+    sort_status: "Sortera: Status (ska tas först)",
+    sort_next: "Sortera: Nästa dos (närmast)",
+    sort_last_taken: "Sortera: Senast tagen (nyligen)",
+    col_name: "Namn",
+    col_status: "Status",
+    col_dose: "Dos",
+    col_schedule: "Schema",
+    col_last_taken: "Senast tagen",
+    no_prescriptions: "Inga recept ännu — lägg till ett för att komma igång.",
+    vis_question: "Vem kan se denna medicin i panelen?",
+    vis_everyone: "Alla",
+    vis_linked: "Endast kopplad person",
+    vis_admins: "Endast administratörer",
+    vis_specific: "Utvalda användare",
+    vis_loading_users: "Laddar användarlista…",
+    vis_users_failed: "Kunde inte ladda användarlistan — se webbläsarkonsolen.",
+    vis_owner_hint: "Ägaren har alltid åtkomst oavsett val.",
+    err_invalid_type: "Typ måste vara Piller, Droppar eller Injektion.",
+    err_days_of_month_range: "Dagar i månaden måste vara mellan 1 och 31.",
+    err_days_of_month_invalid: "Kunde inte tolka dagar i månaden — använd kommaseparerade siffror.",
+    err_days_of_month_required: "Månadsschema behöver minst en dag i månaden.",
+    err_days_invalid: "Kunde inte tolka veckodagar — förväntade 0–6 (mån–sön).",
+    err_days_range: "Veckodagar måste vara mellan 0 (mån) och 6 (sön).",
+    err_days_required: "Veckoschema behöver minst en veckodag.",
+    err_duplicate_prescription_id: "Detta recept har samma id som ett annat. Varje id måste vara unikt.",
+    err_ends_on_invalid: "Slutdatum måste vara i formatet ÅÅÅÅ-MM-DD. Lämna tomt för inget slutdatum.",
+    err_starts_on_invalid: "Startdatum måste vara i formatet ÅÅÅÅ-MM-DD. Lämna tomt för att börja idag.",
+    err_frequency_invalid: "Frekvens måste vara dagligen, veckovis, månadsvis eller var N:e dag.",
+    err_interval_days_required: "Var N:e dag-schema behöver ett intervall (minst 2 dagar).",
+    err_interval_days_invalid: "Intervallet måste vara ett heltal.",
+    err_interval_days_range: "Intervallet måste vara mellan 2 och 365 dagar.",
+    err_times_per_weekday_invalid: "Tider per veckodag måste vara 7 poster (mån till sön) med kommaseparerade HH:MM-tider.",
+    err_times_per_weekday_length: "Tider per veckodag behöver exakt 7 poster (en per veckodag).",
+    err_times_per_weekday_required: "Tider per veckodag behöver minst en veckodag med en dostid.",
+    err_times_per_weekday_time_invalid: "En av veckodagsraderna har en felaktig tid. Använd formatet HH:MM.",
+    err_times_invalid: "Tider måste vara i formatet HH:MM (t.ex. '07:00' eller '7:00').",
+    err_invalid_number: "Ange ett giltigt tal.",
+    err_times_required: "Lägg till minst en tid på dagen.",
+    err_at_least_one_prescription: "Lägg till minst ett recept.",
+    err_medicine_not_found: "Denna medicin finns inte längre.",
+    err_update_failed: "Det gick inte att spara. Försök igen.",
+    err_create_failed: "Det gick inte att skapa medicinen. Försök igen.",
+    err_delete_failed: "Det gick inte att ta bort medicinen.",
+    err_no_pillpilot_entry: "PillPilot är inte konfigurerat. Lägg till det via Inställningar → Enheter & tjänster först.",
+    err_ws_error: "Kunde inte nå Home Assistant. Försök igen.",
+    err_unknown: "Något gick fel.",
   },
 };
 
@@ -1589,6 +1712,16 @@ class PillPilotPanel extends HTMLElement {
     return table[key] || STRINGS.en[key] || key;
   }
 
+  // Template variant: replaces {name} placeholders in the looked-up
+  // string with values from vars.
+  _tf(key, vars) {
+    let s = this._t(key);
+    for (const [k, v] of Object.entries(vars || {})) {
+      s = s.replace("{" + k + "}", v);
+    }
+    return s;
+  }
+
   // v0.2.19: client-side panel-level access gate for the
   // "selected_users" visibility mode. Other modes don't need a gate
   // because HA enforces them at the registration layer:
@@ -2025,17 +2158,17 @@ class PillPilotPanel extends HTMLElement {
   }
 
   _formatRelative(isoStr) {
-    if (!isoStr) return "never";
+    if (!isoStr) return this._t("never");
     const dt = new Date(isoStr);
     if (isNaN(dt.getTime())) return "—";
     const diffMs = Date.now() - dt.getTime();
     const mins = Math.floor(diffMs / 60000);
-    if (mins < 1) return "just now";
-    if (mins < 60) return `${mins}m ago`;
+    if (mins < 1) return this._t("just_now");
+    if (mins < 60) return this._tf("mins_ago", { n: mins });
     const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h ago`;
+    if (hours < 24) return this._tf("hours_ago", { n: hours });
     const days = Math.floor(hours / 24);
-    if (days < 7) return `${days}d ago`;
+    if (days < 7) return this._tf("days_ago", { n: days });
     return dt.toLocaleDateString();
   }
 
@@ -2105,7 +2238,7 @@ class PillPilotPanel extends HTMLElement {
     // ends_on (if set) appends " · until <date>" to the rest of the
     // summary regardless of frequency mode. Universal optional field.
     const endsSuffix = attrs.ends_on
-      ? ` · until ${this._formatEndDate(attrs.ends_on)}`
+      ? this._tf("sched_until", { date: this._formatEndDate(attrs.ends_on) })
       : "";
 
     // Times portion: when times_per_weekday is set, render a grouped
@@ -2116,35 +2249,35 @@ class PillPilotPanel extends HTMLElement {
 
     const frequency = attrs.frequency || "weekly";
     if (frequency === "daily") {
-      return `Daily · ${timesPart}${endsSuffix}`;
+      return `${this._t("sched_daily")} · ${timesPart}${endsSuffix}`;
     }
     if (frequency === "weekly") {
       const days = attrs.scheduled_days || [];
       // Weekly with all 7 days OR with no days listed is functionally
       // daily — show it that way to avoid useless detail.
       if (days.length >= 7 || days.length === 0) {
-        return `Daily · ${timesPart}${endsSuffix}`;
+        return `${this._t("sched_daily")} · ${timesPart}${endsSuffix}`;
       }
-      const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+      const labels = this._t("weekdays_short").split(",");
       const dayList = [...days]
         .map((d) => parseInt(d, 10))
         .filter((d) => !isNaN(d) && d >= 0 && d <= 6)
         .sort((a, b) => a - b)
         .map((d) => labels[d])
         .join(", ");
-      return `Weekly (${dayList}) · ${timesPart}${endsSuffix}`;
+      return `${this._tf("sched_weekly", { days: dayList })} · ${timesPart}${endsSuffix}`;
     }
     if (frequency === "monthly") {
       const dom = attrs.scheduled_days_of_month || [];
       if (dom.length === 0) {
-        return `Monthly · ${timesPart}${endsSuffix}`;
+        return `${this._t("sched_monthly")} · ${timesPart}${endsSuffix}`;
       }
       const dayList = [...dom]
         .map((d) => parseInt(d, 10))
         .filter((d) => !isNaN(d) && d >= 1 && d <= 31)
         .sort((a, b) => a - b)
         .join(", ");
-      return `Monthly (${dayList}) · ${timesPart}${endsSuffix}`;
+      return `${this._tf("sched_monthly_days", { days: dayList })} · ${timesPart}${endsSuffix}`;
     }
     if (frequency === "interval") {
       const n = parseInt(attrs.interval_days, 10);
@@ -2152,15 +2285,15 @@ class PillPilotPanel extends HTMLElement {
       // the every-N-day phase. Render it inline so the user can spot
       // a misaligned anchor at a glance ("Every 14 days from May 4").
       const fromSuffix = attrs.starts_on
-        ? ` from ${this._formatEndDate(attrs.starts_on)}`
+        ? this._tf("sched_from", { date: this._formatEndDate(attrs.starts_on) })
         : "";
       // Plain "Every N days" — N=2 reads more naturally as "every
       // other day" but stays explicit to avoid the user wondering
       // whether the math is off-by-one.
       if (Number.isFinite(n) && n >= 2) {
-        return `Every ${n} days${fromSuffix} · ${timesPart}${endsSuffix}`;
+        return `${this._tf("sched_every_n_days", { n })}${fromSuffix} · ${timesPart}${endsSuffix}`;
       }
-      return `Every N days${fromSuffix} · ${timesPart}${endsSuffix}`;
+      return `${this._t("sched_every_n_days_generic")}${fromSuffix} · ${timesPart}${endsSuffix}`;
     }
     return `${timesPart}${endsSuffix}`;
   }
@@ -2183,7 +2316,7 @@ class PillPilotPanel extends HTMLElement {
   // ranges. Accepts either an array of arrays (sensor shape) or
   // an array of comma-strings (draft shape) — normalizes both.
   _formatPerWeekdayTimes(tpw) {
-    const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const labels = this._t("weekdays_short").split(",");
     // Normalize each entry to a stable key string: "08:00 / 20:00"
     // for matching, with empty entries as "" (= skip-day).
     const norm = tpw.map((entry) => {
@@ -2209,7 +2342,7 @@ class PillPilotPanel extends HTMLElement {
         const dayLabel = g.start === g.end
           ? labels[g.start]
           : `${labels[g.start]}-${labels[g.end]}`;
-        if (!g.times) return `${dayLabel} (skip)`;
+        if (!g.times) return `${dayLabel} ${this._t("skip_day")}`;
         return `${dayLabel} ${g.times}`;
       })
       .join(" · ");
@@ -3129,7 +3262,7 @@ class PillPilotPanel extends HTMLElement {
       ? `<div class="modal-error-banner">${escapeHtml(errMsg(errors.base))}${detailHtml}</div>`
       : "";
     const deleteBtn = showDelete
-      ? `<button class="modal-btn modal-btn-danger" data-action="delete-edit" ${saving ? "disabled" : ""}>Delete medicine</button>`
+      ? `<button class="modal-btn modal-btn-danger" data-action="delete-edit" ${saving ? "disabled" : ""}>${escapeHtml(this._t("delete_medicine"))}</button>`
       : "";
     return `
       <div class="modal-overlay" data-action="${closeAction}">
@@ -3286,7 +3419,7 @@ class PillPilotPanel extends HTMLElement {
           <h3 class="form-section-title">${escapeHtml(this._t("section_prescriptions"))}</h3>
         </div>
         ${draft.prescriptions.length === 0
-          ? `<div class="prescription-empty">No prescriptions yet — add one to get started.</div>`
+          ? `<div class="prescription-empty">${escapeHtml(this._t("no_prescriptions"))}</div>`
           : `<div class="prescription-list">${prescriptionRows}</div>`
         }
         <button class="modal-btn modal-btn-secondary add-prescription-btn" data-action="add-prescription">${escapeHtml(this._t("add_prescription"))}</button>
@@ -3303,10 +3436,10 @@ class PillPilotPanel extends HTMLElement {
   _renderVisibilitySection(draft, drugErrors, errMsg) {
     const mode = draft.drug.visibility || "everyone";
     const modeOptions = [
-      ["everyone", "Everyone"],
-      ["linked_person", "Linked person only"],
-      ["admins_only", "Admins only"],
-      ["specific_users", "Specific users"],
+      ["everyone", this._t("vis_everyone")],
+      ["linked_person", this._t("vis_linked")],
+      ["admins_only", this._t("vis_admins")],
+      ["specific_users", this._t("vis_specific")],
     ]
       .map(
         ([v, label]) =>
@@ -3318,9 +3451,9 @@ class PillPilotPanel extends HTMLElement {
       this._ensurePanelUsers();
       const users = this._panelUsers;
       if (users === undefined) {
-        usersBlock = `<div class="form-hint">Loading user list…</div>`;
+        usersBlock = `<div class="form-hint">${escapeHtml(this._t("vis_loading_users"))}</div>`;
       } else if (users === null) {
-        usersBlock = `<div class="form-hint">Could not load user list — see browser console.</div>`;
+        usersBlock = `<div class="form-hint">${escapeHtml(this._t("vis_users_failed"))}</div>`;
       } else {
         const selected = new Set(draft.drug.visibility_users || []);
         const checkboxes = users
@@ -3343,7 +3476,7 @@ class PillPilotPanel extends HTMLElement {
           .join("");
         usersBlock = `
           <div class="visibility-user-list">${checkboxes}</div>
-          <div class="form-hint">Owner always has access regardless of selection.</div>
+          <div class="form-hint">${escapeHtml(this._t("vis_owner_hint"))}</div>
         `;
       }
     }
@@ -3351,7 +3484,7 @@ class PillPilotPanel extends HTMLElement {
       <div class="form-section">
         <h3 class="form-section-title">${escapeHtml(this._t("section_visibility"))}</h3>
         <label class="form-field">
-          <span class="form-label">Who can see this medicine in the panel?</span>
+          <span class="form-label">${escapeHtml(this._t("vis_question"))}</span>
           <select class="form-input" data-edit-field="drug.visibility">${modeOptions}</select>
         </label>
         ${usersBlock}
@@ -3404,7 +3537,7 @@ class PillPilotPanel extends HTMLElement {
             : ""}
         </div>
         <div class="prescription-row-actions">
-          <button class="modal-btn modal-btn-secondary" data-action="edit-prescription" data-prescription-index="${index}">Edit</button>
+          <button class="modal-btn modal-btn-secondary" data-action="edit-prescription" data-prescription-index="${index}">${escapeHtml(this._t("edit"))}</button>
           <button class="modal-btn modal-btn-secondary" data-action="remove-prescription" data-prescription-index="${index}">Remove</button>
         </div>
       </div>
@@ -3805,6 +3938,10 @@ class PillPilotPanel extends HTMLElement {
       ws_error: "Couldn't reach Home Assistant. Please try again.",
       unknown: "Something went wrong.",
     };
+    // Translated message wins when the language table has one; the
+    // English map above stays the fallback.
+    const translated = this._t("err_" + key);
+    if (translated !== "err_" + key) return translated;
     return messages[key] || key;
   }
 
@@ -4245,7 +4382,7 @@ class PillPilotPanel extends HTMLElement {
               <div class="kebab-menu" data-kebab-for="${personIdAttr}">
                 <button data-action="snooze-due-person" data-person-key="${personIdAttr}" ${disableTakeDue ? "disabled" : ""}>Snooze all due (15m)</button>
                 <button data-action="snooze-missed-person" data-person-key="${personIdAttr}" ${disableTakeMissed ? "disabled" : ""}>Snooze all missed (15m)</button>
-                <button data-action="undo-person" data-person-key="${personIdAttr}" ${disableUndo ? "disabled" : ""}>Undo last action</button>
+                <button data-action="undo-person" data-person-key="${personIdAttr}" ${disableUndo ? "disabled" : ""}>${escapeHtml(this._t("undo_last_action"))}</button>
               </div>
             </div>
           </div>
@@ -4288,7 +4425,7 @@ class PillPilotPanel extends HTMLElement {
     // TTL drops the pending entry.
     if (d.pending) {
       return `
-        <div class="dose-pending" title="Saving…">
+        <div class="dose-pending" title="${escapeHtml(this._t("saving"))}">
           <span class="pending-spinner"></span>
           <span class="pending-label">Saving…</span>
         </div>
@@ -4304,14 +4441,14 @@ class PillPilotPanel extends HTMLElement {
       // pillpilot.unmark_taken for this exact slot.
       return `
         <div class="dose-taken-wrapper">
-          <div class="dose-status-label taken">✓ Taken${at ? ` at ${escapeHtml(at)}` : ""}</div>
+          <div class="dose-status-label taken">${escapeHtml(at ? this._tf("st_taken_at", { at }) : this._t("st_taken"))}</div>
           <button class="dose-undo-btn" data-action="undo-dose" data-medicine-id="${medId}" data-scheduled-at="${sched}">${escapeHtml(this._t("undo"))}</button>
         </div>
       `;
     }
     if (d.status === STATE_SKIPPED) {
       const at = this._formatActionTime(d.actionAt);
-      return `<div class="dose-status-label skipped">⊘ Skipped${at ? ` at ${escapeHtml(at)}` : ""}</div>`;
+      return `<div class="dose-status-label skipped">${escapeHtml(at ? this._tf("st_skipped_at", { at }) : this._t("st_skipped"))}</div>`;
     }
     if (d.status === STATE_SNOOZED) {
       // Snooze surfaces the elapse time (action_at carries snoozed_until)
@@ -4323,10 +4460,10 @@ class PillPilotPanel extends HTMLElement {
       const medId = escapeHtml(d.medicineId);
       return `
         <div class="dose-snoozed-wrapper">
-          <div class="dose-status-label snoozed">⏰ Snoozed${until ? ` until ${escapeHtml(until)}` : ""}</div>
+          <div class="dose-status-label snoozed">${escapeHtml(until ? this._tf("st_snoozed_until", { at: until }) : this._t("st_snoozed"))}</div>
           <div class="dose-actions">
-            <button class="dose-action-btn take" data-action="take" data-medicine-id="${medId}" data-scheduled-at="${sched}">Take</button>
-            <button class="dose-action-btn skip" data-action="skip" data-medicine-id="${medId}" data-scheduled-at="${sched}">Skip</button>
+            <button class="dose-action-btn take" data-action="take" data-medicine-id="${medId}" data-scheduled-at="${sched}">${escapeHtml(this._t("take"))}</button>
+            <button class="dose-action-btn skip" data-action="skip" data-medicine-id="${medId}" data-scheduled-at="${sched}">${escapeHtml(this._t("skip"))}</button>
           </div>
         </div>
       `;
@@ -4336,9 +4473,9 @@ class PillPilotPanel extends HTMLElement {
       const medId = escapeHtml(d.medicineId);
       return `
         <div class="dose-actions">
-          <button class="dose-action-btn take" data-action="take" data-medicine-id="${medId}" data-scheduled-at="${sched}">Take</button>
-          <button class="dose-action-btn snooze" data-action="snooze" data-medicine-id="${medId}" data-scheduled-at="${sched}">Snooze</button>
-          <button class="dose-action-btn skip" data-action="skip" data-medicine-id="${medId}" data-scheduled-at="${sched}">Skip</button>
+          <button class="dose-action-btn take" data-action="take" data-medicine-id="${medId}" data-scheduled-at="${sched}">${escapeHtml(this._t("take"))}</button>
+          <button class="dose-action-btn snooze" data-action="snooze" data-medicine-id="${medId}" data-scheduled-at="${sched}">${escapeHtml(this._t("snooze"))}</button>
+          <button class="dose-action-btn skip" data-action="skip" data-medicine-id="${medId}" data-scheduled-at="${sched}">${escapeHtml(this._t("skip"))}</button>
         </div>
       `;
     }
@@ -4396,11 +4533,11 @@ class PillPilotPanel extends HTMLElement {
       `<option value="${value}" ${current === value ? "selected" : ""}>${escapeHtml(label)}</option>`;
     return `
       <select class="sort-select" data-action="sort-set" aria-label="Sort medicines">
-        ${opt("name:asc", "Sort: Name (A–Z)")}
-        ${opt("name:desc", "Sort: Name (Z–A)")}
-        ${opt("status:asc", "Sort: Status (due first)")}
-        ${opt("next:asc", "Sort: Next dose (soonest)")}
-        ${opt("last_taken:desc", "Sort: Last taken (recent)")}
+        ${opt("name:asc", this._t("sort_name_asc"))}
+        ${opt("name:desc", this._t("sort_name_desc"))}
+        ${opt("status:asc", this._t("sort_status"))}
+        ${opt("next:asc", this._t("sort_next"))}
+        ${opt("last_taken:desc", this._t("sort_last_taken"))}
       </select>
     `;
   }
@@ -4419,11 +4556,11 @@ class PillPilotPanel extends HTMLElement {
     };
     return `
       <div class="med-list-row med-list-header">
-        ${cell("name", "Name")}
-        <span class="sort-header sort-header-static">Status</span>
-        <span class="sort-header sort-header-static">Dose</span>
-        ${cell("next", "Schedule")}
-        ${cell("last_taken", "Last taken")}
+        ${cell("name", this._t("col_name"))}
+        <span class="sort-header sort-header-static">${escapeHtml(this._t("col_status"))}</span>
+        <span class="sort-header sort-header-static">${escapeHtml(this._t("col_dose"))}</span>
+        ${cell("next", this._t("col_schedule"))}
+        ${cell("last_taken", this._t("col_last_taken"))}
         <span></span>
       </div>
     `;
@@ -4436,10 +4573,10 @@ class PillPilotPanel extends HTMLElement {
     // medicine (shared across prescriptions).
     const { med, prescription } = item;
     const a = med.attributes;
-    const labelInfo = STATE_LABELS[prescription.state] || {
-      text: prescription.state || "",
-      kind: "neutral",
-    };
+    const labelInfo = STATE_LABELS[prescription.state] || { kind: "neutral" };
+    const labelText = labelInfo.key
+      ? this._t(labelInfo.key)
+      : prescription.state || "";
     const lastTaken = this._formatRelative(prescription.last_taken_at);
     // _formatSchedule reads scheduled_times/frequency/scheduled_days/
     // scheduled_days_of_month — same field names on the prescription
@@ -4452,14 +4589,14 @@ class PillPilotPanel extends HTMLElement {
       <div class="med-card">
         <div class="med-header">
           <span class="med-name">${escapeHtml(name)}</span>
-          <span class="pill pill-${labelInfo.kind}">${escapeHtml(labelInfo.text)}</span>
+          <span class="pill pill-${labelInfo.kind}">${escapeHtml(labelText)}</span>
         </div>
         ${prescription.dose ? `<div class="med-dose">${escapeHtml(prescription.dose)}</div>` : ""}
         <div class="med-meta">${escapeHtml(sched)}</div>
-        <div class="med-meta">Last taken: ${escapeHtml(lastTaken)}</div>
+        <div class="med-meta">${escapeHtml(this._t("last_taken"))}: ${escapeHtml(lastTaken)}</div>
         ${note ? `<div class="med-note">${escapeHtml(note)}</div>` : ""}
         <div class="med-footer">
-          <button class="med-edit-btn" data-action="edit" data-medicine-id="${medId}">Edit</button>
+          <button class="med-edit-btn" data-action="edit" data-medicine-id="${medId}">${escapeHtml(this._t("edit"))}</button>
         </div>
       </div>
     `;
@@ -4471,10 +4608,10 @@ class PillPilotPanel extends HTMLElement {
   _renderMedListRow(item) {
     const { med, prescription } = item;
     const a = med.attributes;
-    const labelInfo = STATE_LABELS[prescription.state] || {
-      text: prescription.state || "",
-      kind: "neutral",
-    };
+    const labelInfo = STATE_LABELS[prescription.state] || { kind: "neutral" };
+    const labelText = labelInfo.key
+      ? this._t(labelInfo.key)
+      : prescription.state || "";
     const lastTaken = this._formatRelative(prescription.last_taken_at);
     const sched = this._formatSchedule(prescription);
     const name = a.medicine_name || a.friendly_name || med.entity_id;
@@ -4482,11 +4619,11 @@ class PillPilotPanel extends HTMLElement {
     return `
       <div class="med-list-row">
         <div class="med-list-name">${escapeHtml(name)}</div>
-        <span class="pill pill-${labelInfo.kind}">${escapeHtml(labelInfo.text)}</span>
+        <span class="pill pill-${labelInfo.kind}">${escapeHtml(labelText)}</span>
         <div class="med-list-meta">${escapeHtml(prescription.dose || "—")}</div>
         <div class="med-list-meta">${escapeHtml(sched)}</div>
         <div class="med-list-meta">${escapeHtml(lastTaken)}</div>
-        <button class="med-edit-btn" data-action="edit" data-medicine-id="${medId}">Edit</button>
+        <button class="med-edit-btn" data-action="edit" data-medicine-id="${medId}">${escapeHtml(this._t("edit"))}</button>
       </div>
     `;
   }
