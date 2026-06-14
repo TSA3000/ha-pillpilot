@@ -707,7 +707,9 @@ const STYLES = `
     background: var(--card-background-color, #fff);
     border: 1px solid var(--divider-color, rgba(0,0,0,0.12));
     border-radius: 12px;
-    overflow: hidden;
+    /* overflow stays visible so a row's kebab dropdown isn't clipped by
+       the container. Row hover/borders are within the radius anyway. */
+    overflow: visible;
   }
   .med-list-row {
     display: grid;
@@ -765,6 +767,7 @@ const STYLES = `
      buttons/spans/divs. */
   .med-list-row > *:nth-child(2) { justify-self: center; text-align: center; }
   .med-list-row > *:nth-child(5) { justify-self: end; text-align: right; }
+  .med-list-row > *:nth-child(6) { justify-self: end; }
   .med-list-name {
     font-weight: 500;
     font-size: 14px;
@@ -5020,6 +5023,8 @@ class PillPilotPanel extends HTMLElement {
     const sched = this._formatSchedule(prescription);
     const name = a.medicine_name || a.friendly_name || med.entity_id;
     const medId = escapeHtml(a.medicine_id);
+    const prescId = escapeHtml(prescription.id || "");
+    const rowKey = `row-${medId}-${prescId}`;
     return `
       <div class="med-list-row">
         <div class="med-list-name">${escapeHtml(name)}</div>
@@ -5027,8 +5032,13 @@ class PillPilotPanel extends HTMLElement {
         <div class="med-list-meta">${escapeHtml(prescription.dose || "—")}</div>
         <div class="med-list-meta">${escapeHtml(sched)}</div>
         <div class="med-list-meta">${escapeHtml(lastTaken)}</div>
-        <button class="med-edit-btn" data-action="open-stock" data-medicine-id="${medId}" data-prescription-id="${escapeHtml(prescription.id || "")}">${escapeHtml(this._t("stock_btn"))}</button>
-        <button class="med-edit-btn" data-action="edit" data-medicine-id="${medId}">${escapeHtml(this._t("edit"))}</button>
+        <div class="kebab-wrapper">
+          <button class="kebab-btn" data-action="toggle-kebab" data-person-key="${rowKey}" aria-label="More actions">⋮</button>
+          <div class="kebab-menu" data-kebab-for="${rowKey}">
+            <button data-action="edit" data-medicine-id="${medId}">${escapeHtml(this._t("edit"))}</button>
+            <button data-action="open-stock" data-medicine-id="${medId}" data-prescription-id="${prescId}">${escapeHtml(this._t("stock_btn"))}</button>
+          </div>
+        </div>
       </div>
     `;
   }

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.0-beta3] — 2026-06-14
+
+Beta release.
+
+- List view: the per-row Edit and Stock actions move into a kebab menu, so each row stays aligned to its columns instead of spilling a second button outside the grid.
+
 ## [0.3.0-beta2] — 2026-06-14
 
 Beta release. Stock tracking in the panel.
