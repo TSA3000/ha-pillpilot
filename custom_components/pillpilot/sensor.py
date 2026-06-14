@@ -193,6 +193,19 @@ class MedicineSensor(CoordinatorEntity[MedicineCoordinator], SensorEntity):
                     "last_taken_at": _iso(p.last_taken_at),
                     "today_doses": p.today_doses,
                     "state": p.state,
+                    # v0.3.0 stock — present for every prescription;
+                    # track_stock is False (and the rest null) until
+                    # enabled via the stock services.
+                    "track_stock": p.track_stock,
+                    "stock": p.stock,
+                    "stock_unit": p.stock_unit,
+                    "pack_size": p.pack_size,
+                    "packs_left": p.packs_left,
+                    "doses_left": p.doses_left,
+                    "days_left": p.days_left,
+                    "run_out_date": p.run_out_date,
+                    "expiry_date": p.expiry_date,
+                    "low_stock": p.low_stock,
                 }
                 for p in s.prescriptions
             ],
@@ -236,6 +249,9 @@ class MedicineSensor(CoordinatorEntity[MedicineCoordinator], SensorEntity):
             # panel uses this to decide whether each slot's row shows
             # action buttons or a "✓ Taken at HH:MM" label.
             "today_doses": s.today_doses,
+            # v0.3.0: true if any tracked prescription is below its
+            # refill threshold. Convenient single flag for automations.
+            "low_stock": s.low_stock,
         }
         if s.npl_id:
             attrs["npl_id"] = s.npl_id

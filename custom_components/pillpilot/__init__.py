@@ -30,15 +30,20 @@ from .const import (
     CONF_PANEL_VISIBILITY,
     DOMAIN,
     PLATFORMS,
+    SERVICE_ADJUST_STOCK,
     SERVICE_BACKFILL_FROM_CATALOG,
+    SERVICE_CONFIGURE_STOCK,
     SERVICE_MARK_TAKEN,
     SERVICE_MARK_TAKEN_BULK,
+    SERVICE_REFILL,
+    SERVICE_SET_STOCK,
     SERVICE_SKIP,
     SERVICE_SNOOZE,
     SERVICE_SNOOZE_BULK,
     SERVICE_UNMARK_TAKEN,
     SERVICE_UNMARK_TAKEN_BULK,
     SERVICE_REFRESH_MEDICINES_DATABASE,
+    STOCK_REMINDER_MODES,
     SUBENTRY_TYPE_MEDICINE,
     VIS_ADMINS_ONLY,
     VIS_EVERYONE,
@@ -147,6 +152,46 @@ REFRESH_MEDICINES_DB_SCHEMA = vol.Schema(
 
 
 BACKFILL_FROM_CATALOG_SCHEMA = vol.Schema({})
+
+CONFIGURE_STOCK_SCHEMA = vol.Schema(
+    {
+        vol.Required("medicine_id"): cv.string,
+        vol.Required("prescription_id"): cv.string,
+        vol.Optional("track_stock"): cv.boolean,
+        vol.Optional("pack_size"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+        vol.Optional("reminder_enabled"): cv.boolean,
+        vol.Optional("reminder_mode"): vol.In(STOCK_REMINDER_MODES),
+        vol.Optional("reminder_threshold"): vol.All(
+            vol.Coerce(float), vol.Range(min=0)
+        ),
+        vol.Optional("expiry"): vol.Any(cv.string, None),
+    }
+)
+SET_STOCK_SCHEMA = vol.Schema(
+    {
+        vol.Required("medicine_id"): cv.string,
+        vol.Required("prescription_id"): cv.string,
+        vol.Required("amount"): vol.All(vol.Coerce(float), vol.Range(min=0)),
+        vol.Optional("expiry"): vol.Any(cv.string, None),
+    }
+)
+ADJUST_STOCK_SCHEMA = vol.Schema(
+    {
+        vol.Required("medicine_id"): cv.string,
+        vol.Required("prescription_id"): cv.string,
+        vol.Required("delta"): vol.Coerce(float),
+    }
+)
+REFILL_SCHEMA = vol.Schema(
+    {
+        vol.Required("medicine_id"): cv.string,
+        vol.Required("prescription_id"): cv.string,
+        vol.Optional("packs", default=1): vol.All(
+            vol.Coerce(float), vol.Range(min=0)
+        ),
+        vol.Optional("expiry"): vol.Any(cv.string, None),
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -604,6 +649,51 @@ def _register_services(hass: HomeAssistant) -> None:
                 med_id, scheduled_for=scheduled_for, person_id=person_id
             )
 
+    async def handle_configure_stock(call: ServiceCall) -> None:
+        med_id = call.data["medicine_id"]
+        coord = await _resolve(med_id)
+        if coord:
+            await coord.async_configure_stock(
+                med_id,
+                call.data["prescription_id"],
+                track_stock=call.data.get("track_stock"),
+                pack_size=call.data.get("pack_size"),
+                reminder_enabled=call.data.get("reminder_enabled"),
+                reminder_mode=call.data.get("reminder_mode"),
+                reminder_threshold=call.data.get("reminder_threshold"),
+                expiry=call.data.get("expiry"),
+            )
+
+    async def handle_set_stock(call: ServiceCall) -> None:
+        med_id = call.data["medicine_id"]
+        coord = await _resolve(med_id)
+        if coord:
+            await coord.async_set_stock(
+                med_id,
+                call.data["prescription_id"],
+                call.data["amount"],
+                expiry=call.data.get("expiry"),
+            )
+
+    async def handle_adjust_stock(call: ServiceCall) -> None:
+        med_id = call.data["medicine_id"]
+        coord = await _resolve(med_id)
+        if coord:
+            await coord.async_adjust_stock(
+                med_id, call.data["prescription_id"], call.data["delta"]
+            )
+
+    async def handle_refill(call: ServiceCall) -> None:
+        med_id = call.data["medicine_id"]
+        coord = await _resolve(med_id)
+        if coord:
+            await coord.async_refill(
+                med_id,
+                call.data["prescription_id"],
+                packs=call.data.get("packs", 1),
+                expiry=call.data.get("expiry"),
+            )
+
     async def handle_refresh_medicines_database(call: ServiceCall) -> None:
         """Pull a fresh copy of medicines_se.json from the configured URL.
 
@@ -762,6 +852,24 @@ def _register_services(hass: HomeAssistant) -> None:
         SERVICE_BACKFILL_FROM_CATALOG,
         handle_backfill_from_catalog,
         schema=BACKFILL_FROM_CATALOG_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CONFIGURE_STOCK,
+        handle_configure_stock,
+        schema=CONFIGURE_STOCK_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_SET_STOCK, handle_set_stock, schema=SET_STOCK_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_ADJUST_STOCK,
+        handle_adjust_stock,
+        schema=ADJUST_STOCK_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_REFILL, handle_refill, schema=REFILL_SCHEMA
     )
 
 

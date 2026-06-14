@@ -260,3 +260,69 @@ LANG_EN = "en"
 LANG_SV = "sv"
 DEFAULT_LANGUAGE = LANG_AUTO
 LANGUAGE_OPTIONS = [LANG_AUTO, LANG_EN, LANG_SV]
+
+# ---------------------------------------------------------------------------
+# Stock / inventory (added v0.3.0)
+#
+# Stock is tracked per prescription. In this release the per-prescription
+# stock config and the stock-event ledger both live in the coordinator's
+# Store (beside dose history), keyed by (medicine_id, prescription_id), and
+# are driven by the services below — the panel and config flow surfaces come
+# in a later release. Current stock is never stored; it is derived from the
+# ledger (a `set` baseline plus refill / add / remove deltas) minus the units
+# consumed by taken doses after that baseline.
+#
+# Nothing stock-related is surfaced for a prescription unless its
+# `track_stock` config flag is on.
+# ---------------------------------------------------------------------------
+
+# Per-prescription stock config (dict keys in the coordinator store).
+CONF_STOCK_TRACK = "track_stock"
+CONF_STOCK_PACK_SIZE = "pack_size"            # units per purchased pack
+CONF_STOCK_EXPIRY = "expiry"                  # ISO date "YYYY-MM-DD" or None
+CONF_STOCK_REMINDER_ENABLED = "reminder_enabled"
+CONF_STOCK_REMINDER_MODE = "reminder_mode"    # one of STOCK_REMINDER_MODES
+CONF_STOCK_REMINDER_THRESHOLD = "reminder_threshold"
+
+# Refill-reminder modes: the threshold is read against units left, doses
+# left, or days until the projected run-out.
+STOCK_REMINDER_UNITS = "units"
+STOCK_REMINDER_DOSES = "doses"
+STOCK_REMINDER_DAYS = "days"
+STOCK_REMINDER_MODES = (
+    STOCK_REMINDER_UNITS,
+    STOCK_REMINDER_DOSES,
+    STOCK_REMINDER_DAYS,
+)
+DEFAULT_STOCK_REMINDER_MODE = STOCK_REMINDER_DOSES
+
+# Stock-event kinds in the ledger.
+STOCK_EVENT_SET = "set"        # absolute baseline at a timestamp
+STOCK_EVENT_REFILL = "refill"  # +pack_size * packs
+STOCK_EVENT_ADD = "add"        # +amount
+STOCK_EVENT_REMOVE = "remove"  # -amount
+STOCK_EVENT_KINDS = (
+    STOCK_EVENT_SET,
+    STOCK_EVENT_REFILL,
+    STOCK_EVENT_ADD,
+    STOCK_EVENT_REMOVE,
+)
+
+# How far ahead the run-out projection walks the schedule before giving up
+# (bounds work on a misconfigured schedule). Mirrors the schedule lookahead
+# rationale but spans a long course.
+STOCK_RUNOUT_LOOKAHEAD_DAYS = 365
+
+# Default lead time for the "expiring soon" event.
+DEFAULT_STOCK_EXPIRY_LEAD_DAYS = 7
+
+# ---- stock bus events -----------------------------------------------
+EVENT_STOCK_LOW = f"{DOMAIN}_stock_low"
+EVENT_STOCK_EXPIRING = f"{DOMAIN}_stock_expiring"
+EVENT_STOCK_EXPIRED = f"{DOMAIN}_stock_expired"
+
+# ---- stock services -------------------------------------------------
+SERVICE_CONFIGURE_STOCK = "configure_stock"
+SERVICE_SET_STOCK = "set_stock"
+SERVICE_ADJUST_STOCK = "adjust_stock"
+SERVICE_REFILL = "refill"

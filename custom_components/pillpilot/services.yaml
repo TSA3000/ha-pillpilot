@@ -177,3 +177,153 @@ unmark_taken_bulk:
       example: '[{"medicine_id": "a1b2c3", "scheduled_for": "2026-05-04T07:00:00+02:00"}]'
       selector:
         object:
+
+configure_stock:
+  name: Configure stock tracking
+  description: Turn stock tracking on or off for a prescription and set its pack size, refill reminder, and expiry. Nothing stock-related is shown until track_stock is on.
+  fields:
+    medicine_id:
+      name: Medicine ID
+      description: The internal id of the medicine (see sensor attributes).
+      required: true
+      example: "a1b2c3d4e5f6"
+      selector:
+        text:
+    prescription_id:
+      name: Prescription ID
+      description: The prescription's id (see the prescriptions list in the sensor attributes).
+      required: true
+      example: "9f8e7d6c5b4a"
+      selector:
+        text:
+    track_stock:
+      name: Track stock
+      description: Enable or disable stock tracking for this prescription.
+      required: false
+      selector:
+        boolean:
+    pack_size:
+      name: Pack size
+      description: How many units one purchased pack provides (tablets per box, or injections per pen).
+      required: false
+      example: 30
+      selector:
+        number:
+          min: 0
+          mode: box
+    reminder_enabled:
+      name: Refill reminder enabled
+      required: false
+      selector:
+        boolean:
+    reminder_mode:
+      name: Refill reminder mode
+      description: Whether the threshold is read against units left, doses left, or days until run-out.
+      required: false
+      selector:
+        select:
+          options:
+            - units
+            - doses
+            - days
+    reminder_threshold:
+      name: Refill reminder threshold
+      description: Fire the low-stock event at or below this value, in the chosen mode.
+      required: false
+      example: 5
+      selector:
+        number:
+          min: 0
+          mode: box
+    expiry:
+      name: Expiry date
+      description: Expiry date for the current stock (YYYY-MM-DD). Leave blank to clear.
+      required: false
+      example: "2026-12-31"
+      selector:
+        text:
+
+set_stock:
+  name: Set stock
+  description: Set the absolute current stock for a prescription (a new baseline).
+  fields:
+    medicine_id:
+      name: Medicine ID
+      required: true
+      selector:
+        text:
+    prescription_id:
+      name: Prescription ID
+      required: true
+      selector:
+        text:
+    amount:
+      name: Amount
+      description: Current number of units in stock.
+      required: true
+      example: 50
+      selector:
+        number:
+          min: 0
+          mode: box
+    expiry:
+      name: Expiry date
+      description: Optional expiry date for this stock (YYYY-MM-DD).
+      required: false
+      example: "2026-12-31"
+      selector:
+        text:
+
+adjust_stock:
+  name: Adjust stock
+  description: Add to or remove from current stock by a signed amount.
+  fields:
+    medicine_id:
+      name: Medicine ID
+      required: true
+      selector:
+        text:
+    prescription_id:
+      name: Prescription ID
+      required: true
+      selector:
+        text:
+    delta:
+      name: Delta
+      description: Positive to add units, negative to remove.
+      required: true
+      example: -2
+      selector:
+        number:
+          mode: box
+
+refill:
+  name: Refill
+  description: Add one or more packs to stock. Uses the configured pack size.
+  fields:
+    medicine_id:
+      name: Medicine ID
+      required: true
+      selector:
+        text:
+    prescription_id:
+      name: Prescription ID
+      required: true
+      selector:
+        text:
+    packs:
+      name: Packs
+      description: How many packs were bought. Stock increases by pack size times packs.
+      required: false
+      example: 1
+      selector:
+        number:
+          min: 0
+          mode: box
+    expiry:
+      name: Expiry date
+      description: Optional expiry date for the refilled stock (YYYY-MM-DD).
+      required: false
+      example: "2026-12-31"
+      selector:
+        text:

@@ -49,8 +49,16 @@ from .const import (
     CONF_MED_VARUNUMMER,
     CONF_MEDICINES,
     CONF_PRESCRIPTION_ID,
+    CONF_STOCK_EXPIRY,
+    CONF_STOCK_PACK_SIZE,
+    CONF_STOCK_REMINDER_ENABLED,
+    CONF_STOCK_REMINDER_MODE,
+    CONF_STOCK_REMINDER_THRESHOLD,
+    CONF_STOCK_TRACK,
     DEFAULT_REMIND_WINDOW,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_STOCK_EXPIRY_LEAD_DAYS,
+    DEFAULT_STOCK_REMINDER_MODE,
     DOMAIN,
     EVENT_DOSE_DUE,
     EVENT_DOSE_MISSED,
@@ -58,9 +66,15 @@ from .const import (
     EVENT_DOSE_SNOOZED,
     EVENT_DOSE_TAKEN,
     EVENT_DOSE_UNMARKED,
+    EVENT_STOCK_EXPIRED,
+    EVENT_STOCK_EXPIRING,
+    EVENT_STOCK_LOW,
     FREQ_DAILY,
     FREQ_MONTHLY,
     FREQ_WEEKLY,
+    MED_TYPE_DROPS,
+    MED_TYPE_INJECTION,
+    MED_TYPE_PILL,
     SCHEDULE_TYPE_DAILY,
     SCHEDULE_TYPE_INTERVAL,
     SCHEDULE_TYPE_MONTHLY,
@@ -72,12 +86,25 @@ from .const import (
     STATE_SNOOZED,
     STATE_TAKEN,
     STATE_UPCOMING,
+    STOCK_EVENT_ADD,
+    STOCK_EVENT_REFILL,
+    STOCK_EVENT_REMOVE,
+    STOCK_EVENT_SET,
+    STOCK_REMINDER_MODES,
+    STOCK_RUNOUT_LOOKAHEAD_DAYS,
     STORAGE_KEY,
     STORAGE_VERSION,
 )
 from .sources import LookupKey, LookupResult, MedicineSource
 from .schedule import Schedule, rrule_to_friendly
 from .dose import Dose
+from .stock import (
+    StockEvent,
+    current_stock,
+    expiry_status,
+    is_low,
+    project_runout,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -105,6 +132,18 @@ class DoseRecord:
     # the same record gets stamped with taken_at/skipped_at and the
     # snooze fields stay as historical breadcrumb.
     snoozed_until: str | None = None
+    # v0.3.0: which prescription this record belongs to. Populated at
+    # action time from the resolved prescription's id; backfilled on load
+    # for records that pre-date the field by matching person_id to the
+    # medicine's single prescription for that person. Makes per-prescription
+    # stock attribution and same-person disambiguation exact rather than
+    # first-match on person_id.
+    prescription_id: str | None = None
+    # v0.3.0: units removed from stock when this dose was taken (the
+    # prescription's unit_count at take time). Stored on the record so the
+    # figure survives later edits to the dose size. None on non-taken
+    # records and on taken records that pre-date the field.
+    units_consumed: float | None = None
 
 
 @dataclass
@@ -143,6 +182,20 @@ class PrescriptionState:
     # HH:MM strings) — what panel.js consumes via sensor attributes.
     # None means simple mode (use ``times`` for every firing day).
     times_per_weekday: list[list[str]] | None = None
+    # v0.3.0: stock / inventory. All null/absent unless track_stock is on
+    # for this prescription. stock is derived (never stored); packs_left is
+    # the pack-equivalent for injection display; run_out_date / expiry_date
+    # are ISO dates.
+    track_stock: bool = False
+    stock: float | None = None
+    stock_unit: str | None = None
+    pack_size: float | None = None
+    packs_left: float | None = None
+    doses_left: int | None = None
+    days_left: int | None = None
+    run_out_date: str | None = None
+    expiry_date: str | None = None
+    low_stock: bool = False
 
 
 @dataclass
@@ -272,6 +325,13 @@ class MedicineState:
             None,
         )
 
+    @property
+    def low_stock(self) -> bool:
+        """True if any tracked prescription is below its refill threshold."""
+        return any(
+            p.track_stock and p.low_stock for p in self.prescriptions
+        )
+
 
 class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
     """Drives the schedule. data is keyed by medicine id."""
@@ -294,10 +354,20 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         self._sources = sources
         self._store: Store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}.{entry_id}")
         self._history: dict[str, list[DoseRecord]] = {}
+        # v0.3.0 stock state, persisted in the same Store. Both keyed
+        # [medicine_id][prescription_id]. Config holds the per-prescription
+        # track flag, pack size, reminder settings and expiry; events is the
+        # ledger current stock is derived from.
+        self._stock_config: dict[str, dict[str, dict[str, Any]]] = {}
+        self._stock_events: dict[str, dict[str, list[StockEvent]]] = {}
         # enrichment cache: medicine_id -> {source_id -> (timestamp, LookupResult)}
         self._enrichment: dict[str, dict[str, tuple[datetime, LookupResult]]] = {}
         self._fired_due: set[tuple[str, str | None, str]] = set()
         self._fired_missed: set[tuple[str, str | None, str]] = set()
+        # Fire-once guards for stock events, keyed (medicine_id, prescription_id).
+        self._fired_stock_low: set[tuple[str, str]] = set()
+        self._fired_stock_expiring: set[tuple[str, str]] = set()
+        self._fired_stock_expired: set[tuple[str, str]] = set()
 
     # ---- lifecycle --------------------------------------------------
 
@@ -307,6 +377,42 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
             return
         for med_id, records in raw.get("history", {}).items():
             self._history[med_id] = [DoseRecord(**r) for r in records]
+        for med_id, per_presc in raw.get("stock_config", {}).items():
+            self._stock_config[med_id] = {
+                pid: dict(cfg) for pid, cfg in per_presc.items()
+            }
+        for med_id, per_presc in raw.get("stock_events", {}).items():
+            self._stock_events[med_id] = {
+                pid: [StockEvent(**e) for e in events]
+                for pid, events in per_presc.items()
+            }
+        self._backfill_prescription_ids()
+
+    def _backfill_prescription_ids(self) -> None:
+        """Attribute legacy dose records to a prescription.
+
+        A record stored before v0.3.0 carries person_id but no
+        prescription_id. Under the old one-prescription-per-person
+        assumption a person maps to exactly one prescription on the
+        medicine, so fill the id in from that. If a person now has more
+        than one prescription on the medicine the record predates the
+        split and is left unattributed (it won't decrement the new
+        per-prescription stock).
+        """
+        for med_id, records in self._history.items():
+            med = self._find(med_id)
+            if not med:
+                continue
+            prescriptions = med.get(CONF_MED_PRESCRIPTIONS, [])
+            for r in records:
+                if r.prescription_id is not None:
+                    continue
+                matches = [
+                    p for p in prescriptions
+                    if (p.get(CONF_MED_PERSON) or None) == r.person_id
+                ]
+                if len(matches) == 1:
+                    r.prescription_id = matches[0].get(CONF_PRESCRIPTION_ID)
 
     async def async_setup_sources(self) -> None:
         for src in self._sources:
@@ -328,7 +434,18 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
                 "history": {
                     med_id: [r.__dict__ for r in records]
                     for med_id, records in self._history.items()
-                }
+                },
+                "stock_config": {
+                    med_id: {pid: dict(cfg) for pid, cfg in per_presc.items()}
+                    for med_id, per_presc in self._stock_config.items()
+                },
+                "stock_events": {
+                    med_id: {
+                        pid: [e.__dict__ for e in events]
+                        for pid, events in per_presc.items()
+                    }
+                    for med_id, per_presc in self._stock_events.items()
+                },
             }
         )
 
@@ -346,9 +463,14 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         med: dict[str, Any],
         person_id: str | None,
         when: datetime | None = None,
+        prescription_id: str | None = None,
     ) -> dict[str, Any] | None:
         """Pick the right prescription for an action.
 
+        v0.3.0:
+          0. If ``prescription_id`` is given, match it exactly — the
+             unambiguous path used by the stock services and (later) the
+             panel, including two prescriptions sharing one person.
         v0.2.24:
           1. If ``person_id`` is given, return that prescription (or
              None if no match).
@@ -363,6 +485,14 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         prescriptions = med.get(CONF_MED_PRESCRIPTIONS, [])
         if not prescriptions:
             return None
+        if prescription_id is not None:
+            return next(
+                (
+                    p for p in prescriptions
+                    if p.get(CONF_PRESCRIPTION_ID) == prescription_id
+                ),
+                None,
+            )
         if person_id is not None:
             return next(
                 (p for p in prescriptions if p.get(CONF_MED_PERSON) == person_id),
@@ -445,6 +575,8 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
             scheduled_for=scheduled.isoformat() if scheduled else when.isoformat(),
             person_id=resolved_pid,
             taken_at=when.isoformat(),
+            prescription_id=prescription.get(CONF_PRESCRIPTION_ID),
+            units_consumed=float(prescription.get(CONF_MED_UNIT_COUNT) or 0.0),
         )
         self._history.setdefault(medicine_id, []).append(record)
         self.hass.bus.async_fire(
@@ -520,6 +652,7 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
             scheduled_for=scheduled.isoformat() if scheduled else now.isoformat(),
             person_id=resolved_pid,
             skipped_at=now.isoformat(),
+            prescription_id=prescription.get(CONF_PRESCRIPTION_ID),
         )
         self._history.setdefault(medicine_id, []).append(record)
         await self._async_save()
@@ -613,6 +746,7 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
                     scheduled_for=sched_iso,
                     person_id=resolved_pid,
                     snoozed_until=snoozed_until_iso,
+                    prescription_id=prescription.get(CONF_PRESCRIPTION_ID),
                 )
             )
 
@@ -791,6 +925,317 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
                 _LOGGER.warning("Source %s refresh failed: %s", src.id, err)
         self._enrichment.clear()
         await self.async_request_refresh()
+
+    # ---- stock / inventory (v0.3.0) --------------------------------
+
+    @staticmethod
+    def _stock_unit_label(med_type: str | None) -> str:
+        return {
+            MED_TYPE_PILL: "tablets",
+            MED_TYPE_INJECTION: "injections",
+            MED_TYPE_DROPS: "drops",
+        }.get(med_type or "", "units")
+
+    def _stock_cfg(self, med_id: str, prescription_id: str) -> dict[str, Any] | None:
+        return self._stock_config.get(med_id, {}).get(prescription_id)
+
+    def _consumed_for(
+        self, med_id: str, prescription_id: str
+    ) -> list[tuple[str, float]]:
+        """(taken_at, units_consumed) for this prescription's taken doses."""
+        return [
+            (r.taken_at, float(r.units_consumed or 0.0))
+            for r in self._history.get(med_id, [])
+            if r.taken_at and r.prescription_id == prescription_id
+        ]
+
+    def _stock_for(
+        self, med_id: str, prescription_id: str
+    ) -> float | None:
+        cfg = self._stock_cfg(med_id, prescription_id)
+        if not cfg or not cfg.get(CONF_STOCK_TRACK):
+            return None
+        events = self._stock_events.get(med_id, {}).get(prescription_id, [])
+        return current_stock(events, self._consumed_for(med_id, prescription_id))
+
+    def _forward_occurrences(
+        self,
+        prescription: dict[str, Any],
+        now: datetime,
+        unit_count: float,
+        max_units: float,
+    ) -> list[datetime]:
+        """Future scheduled datetimes from now, enough to exhaust max_units.
+
+        Stops once the accumulated consumption would cover ``max_units`` so
+        a long schedule doesn't build a year of occurrences every tick;
+        bounded by the lookahead regardless.
+        """
+        sched = Schedule.from_medicine_dict(prescription)
+        occ: list[datetime] = []
+        acc = 0.0
+        for offset in range(STOCK_RUNOUT_LOOKAHEAD_DAYS):
+            d = (now + timedelta(days=offset)).date()
+            for o in sched.occurrences_on(d, tz=now.tzinfo):
+                if o <= now:
+                    continue
+                occ.append(o)
+                acc += unit_count
+                if acc >= max_units:
+                    return occ
+        return occ
+
+    def _stock_metrics(
+        self, med: dict[str, Any], prescription: dict[str, Any], now: datetime
+    ) -> dict[str, Any] | None:
+        """Per-prescription stock snapshot, or None when not tracked."""
+        med_id = med[CONF_MED_ID]
+        pid = prescription.get(CONF_PRESCRIPTION_ID)
+        cfg = self._stock_cfg(med_id, pid) if pid else None
+        if not cfg or not cfg.get(CONF_STOCK_TRACK):
+            return None
+
+        stock_val = self._stock_for(med_id, pid)
+        unit_count = float(prescription.get(CONF_MED_UNIT_COUNT) or 0.0)
+        pack_size = cfg.get(CONF_STOCK_PACK_SIZE)
+
+        doses_left: int | None = None
+        run_out: Any = None
+        days_left: int | None = None
+        if stock_val is not None and unit_count > 0:
+            occ = self._forward_occurrences(
+                prescription, now, unit_count, stock_val + unit_count
+            )
+            doses_left, run_out = project_runout(occ, unit_count, stock_val)
+            if run_out is not None:
+                days_left = (run_out - now.date()).days
+
+        mode = cfg.get(CONF_STOCK_REMINDER_MODE) or DEFAULT_STOCK_REMINDER_MODE
+        threshold = float(cfg.get(CONF_STOCK_REMINDER_THRESHOLD) or 0.0)
+        low = bool(cfg.get(CONF_STOCK_REMINDER_ENABLED)) and is_low(
+            mode,
+            threshold,
+            stock=stock_val,
+            doses_left=doses_left,
+            days_left=days_left,
+        )
+        packs_left = (
+            round(stock_val / pack_size, 2)
+            if stock_val is not None and pack_size
+            else None
+        )
+        return {
+            "track_stock": True,
+            "stock": stock_val,
+            "stock_unit": self._stock_unit_label(med.get(CONF_MED_TYPE)),
+            "pack_size": pack_size,
+            "packs_left": packs_left,
+            "doses_left": doses_left,
+            "days_left": days_left,
+            "run_out_date": run_out.isoformat() if run_out else None,
+            "expiry_date": cfg.get(CONF_STOCK_EXPIRY),
+            "low_stock": low,
+        }
+
+    def _fire_stock_events(
+        self, med: dict[str, Any], prescription: dict[str, Any], metrics: dict[str, Any]
+    ) -> None:
+        """Fire stock_low / stock_expiring / stock_expired, once per crossing."""
+        med_id = med[CONF_MED_ID]
+        pid = prescription.get(CONF_PRESCRIPTION_ID)
+        key = (med_id, pid)
+        person_id = prescription.get(CONF_MED_PERSON) or None
+        base = {
+            "medicine_id": med_id,
+            "name": med[CONF_MED_NAME],
+            "prescription_id": pid,
+            "person_id": person_id,
+            "person_name": self._person_name(person_id),
+        }
+
+        if metrics["low_stock"]:
+            if key not in self._fired_stock_low:
+                self.hass.bus.async_fire(
+                    EVENT_STOCK_LOW,
+                    {
+                        **base,
+                        "stock": metrics["stock"],
+                        "doses_left": metrics["doses_left"],
+                        "days_left": metrics["days_left"],
+                        "run_out_date": metrics["run_out_date"],
+                    },
+                )
+                self._fired_stock_low.add(key)
+        else:
+            self._fired_stock_low.discard(key)
+
+        status = expiry_status(
+            metrics["expiry_date"], dt_util.now().date(), DEFAULT_STOCK_EXPIRY_LEAD_DAYS
+        )
+        if status == "expired":
+            self._fired_stock_expiring.discard(key)
+            if key not in self._fired_stock_expired:
+                self.hass.bus.async_fire(
+                    EVENT_STOCK_EXPIRED,
+                    {**base, "expiry_date": metrics["expiry_date"]},
+                )
+                self._fired_stock_expired.add(key)
+        elif status == "expiring":
+            self._fired_stock_expired.discard(key)
+            if key not in self._fired_stock_expiring:
+                self.hass.bus.async_fire(
+                    EVENT_STOCK_EXPIRING,
+                    {**base, "expiry_date": metrics["expiry_date"]},
+                )
+                self._fired_stock_expiring.add(key)
+        else:
+            self._fired_stock_expiring.discard(key)
+            self._fired_stock_expired.discard(key)
+
+    def _append_stock_event(
+        self, med_id: str, prescription_id: str, event: StockEvent
+    ) -> None:
+        self._stock_events.setdefault(med_id, {}).setdefault(
+            prescription_id, []
+        ).append(event)
+
+    async def async_configure_stock(
+        self,
+        medicine_id: str,
+        prescription_id: str,
+        *,
+        track_stock: bool | None = None,
+        pack_size: float | None = None,
+        reminder_enabled: bool | None = None,
+        reminder_mode: str | None = None,
+        reminder_threshold: float | None = None,
+        expiry: str | None = None,
+    ) -> bool:
+        """Set per-prescription stock config. Only provided fields change."""
+        med = self._find(medicine_id)
+        if not med:
+            return False
+        if self._resolve_prescription(med, None, prescription_id=prescription_id) is None:
+            _LOGGER.warning(
+                "configure_stock: no prescription %s on %s",
+                prescription_id, medicine_id,
+            )
+            return False
+        if reminder_mode is not None and reminder_mode not in STOCK_REMINDER_MODES:
+            _LOGGER.warning("configure_stock: bad reminder_mode %s", reminder_mode)
+            return False
+        cfg = self._stock_config.setdefault(medicine_id, {}).setdefault(
+            prescription_id, {}
+        )
+        if track_stock is not None:
+            cfg[CONF_STOCK_TRACK] = bool(track_stock)
+        if pack_size is not None:
+            cfg[CONF_STOCK_PACK_SIZE] = float(pack_size)
+        if reminder_enabled is not None:
+            cfg[CONF_STOCK_REMINDER_ENABLED] = bool(reminder_enabled)
+        if reminder_mode is not None:
+            cfg[CONF_STOCK_REMINDER_MODE] = reminder_mode
+        if reminder_threshold is not None:
+            cfg[CONF_STOCK_REMINDER_THRESHOLD] = float(reminder_threshold)
+        if expiry is not None:
+            cfg[CONF_STOCK_EXPIRY] = expiry or None
+        await self._async_save()
+        await self.async_refresh()
+        return True
+
+    async def async_set_stock(
+        self,
+        medicine_id: str,
+        prescription_id: str,
+        amount: float,
+        expiry: str | None = None,
+    ) -> bool:
+        """Set an absolute stock baseline."""
+        med = self._find(medicine_id)
+        if not med or self._resolve_prescription(
+            med, None, prescription_id=prescription_id
+        ) is None:
+            return False
+        self._append_stock_event(
+            medicine_id,
+            prescription_id,
+            StockEvent(
+                kind=STOCK_EVENT_SET,
+                ts=dt_util.now().isoformat(),
+                amount=float(amount),
+                expiry=expiry or None,
+            ),
+        )
+        if expiry is not None:
+            self._stock_config.setdefault(medicine_id, {}).setdefault(
+                prescription_id, {}
+            )[CONF_STOCK_EXPIRY] = expiry or None
+        await self._async_save()
+        await self.async_refresh()
+        return True
+
+    async def async_adjust_stock(
+        self, medicine_id: str, prescription_id: str, delta: float
+    ) -> bool:
+        """Add (positive delta) or remove (negative delta) from stock."""
+        med = self._find(medicine_id)
+        if not med or self._resolve_prescription(
+            med, None, prescription_id=prescription_id
+        ) is None:
+            return False
+        delta = float(delta)
+        self._append_stock_event(
+            medicine_id,
+            prescription_id,
+            StockEvent(
+                kind=STOCK_EVENT_ADD if delta >= 0 else STOCK_EVENT_REMOVE,
+                ts=dt_util.now().isoformat(),
+                amount=abs(delta),
+            ),
+        )
+        await self._async_save()
+        await self.async_refresh()
+        return True
+
+    async def async_refill(
+        self,
+        medicine_id: str,
+        prescription_id: str,
+        packs: float = 1,
+        expiry: str | None = None,
+    ) -> bool:
+        """Add ``pack_size * packs`` units. Needs a configured pack size."""
+        med = self._find(medicine_id)
+        if not med or self._resolve_prescription(
+            med, None, prescription_id=prescription_id
+        ) is None:
+            return False
+        cfg = self._stock_cfg(medicine_id, prescription_id)
+        pack_size = cfg.get(CONF_STOCK_PACK_SIZE) if cfg else None
+        if not pack_size:
+            _LOGGER.warning(
+                "refill: no pack_size configured for %s/%s",
+                medicine_id, prescription_id,
+            )
+            return False
+        self._append_stock_event(
+            medicine_id,
+            prescription_id,
+            StockEvent(
+                kind=STOCK_EVENT_REFILL,
+                ts=dt_util.now().isoformat(),
+                amount=float(pack_size) * float(packs),
+                pack_count=int(packs) if float(packs).is_integer() else None,
+                expiry=expiry or None,
+            ),
+        )
+        if expiry is not None:
+            self._stock_config.setdefault(medicine_id, {}).setdefault(
+                prescription_id, {}
+            )[CONF_STOCK_EXPIRY] = expiry or None
+        await self._async_save()
+        await self.async_refresh()
+        return True
 
     # ---- the tick ---------------------------------------------------
 
@@ -986,6 +1431,10 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         )
         total_dose_mg = dose_obj.total_mg
 
+        stock_metrics = self._stock_metrics(med, prescription, now)
+        if stock_metrics is not None:
+            self._fire_stock_events(med, prescription, stock_metrics)
+
         return PrescriptionState(
             id=prescription.get(CONF_PRESCRIPTION_ID, ""),
             person_id=person_id,
@@ -1013,6 +1462,16 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
             ends_on=derived_ends_on,
             starts_on=derived_starts_on,
             times_per_weekday=derived_tpw,
+            track_stock=bool(stock_metrics),
+            stock=stock_metrics["stock"] if stock_metrics else None,
+            stock_unit=stock_metrics["stock_unit"] if stock_metrics else None,
+            pack_size=stock_metrics["pack_size"] if stock_metrics else None,
+            packs_left=stock_metrics["packs_left"] if stock_metrics else None,
+            doses_left=stock_metrics["doses_left"] if stock_metrics else None,
+            days_left=stock_metrics["days_left"] if stock_metrics else None,
+            run_out_date=stock_metrics["run_out_date"] if stock_metrics else None,
+            expiry_date=stock_metrics["expiry_date"] if stock_metrics else None,
+            low_stock=stock_metrics["low_stock"] if stock_metrics else False,
         )
 
     @staticmethod
