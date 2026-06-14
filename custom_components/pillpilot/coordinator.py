@@ -196,6 +196,9 @@ class PrescriptionState:
     run_out_date: str | None = None
     expiry_date: str | None = None
     low_stock: bool = False
+    reminder_enabled: bool = False
+    reminder_mode: str | None = None
+    reminder_threshold: float | None = None
 
 
 @dataclass
@@ -1035,6 +1038,9 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
             "run_out_date": run_out.isoformat() if run_out else None,
             "expiry_date": cfg.get(CONF_STOCK_EXPIRY),
             "low_stock": low,
+            "reminder_enabled": bool(cfg.get(CONF_STOCK_REMINDER_ENABLED)),
+            "reminder_mode": mode,
+            "reminder_threshold": threshold,
         }
 
     def _fire_stock_events(
@@ -1472,6 +1478,15 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
             run_out_date=stock_metrics["run_out_date"] if stock_metrics else None,
             expiry_date=stock_metrics["expiry_date"] if stock_metrics else None,
             low_stock=stock_metrics["low_stock"] if stock_metrics else False,
+            reminder_enabled=(
+                stock_metrics["reminder_enabled"] if stock_metrics else False
+            ),
+            reminder_mode=(
+                stock_metrics["reminder_mode"] if stock_metrics else None
+            ),
+            reminder_threshold=(
+                stock_metrics["reminder_threshold"] if stock_metrics else None
+            ),
         )
 
     @staticmethod

@@ -206,6 +206,9 @@ class MedicineSensor(CoordinatorEntity[MedicineCoordinator], SensorEntity):
                     "run_out_date": p.run_out_date,
                     "expiry_date": p.expiry_date,
                     "low_stock": p.low_stock,
+                    "reminder_enabled": p.reminder_enabled,
+                    "reminder_mode": p.reminder_mode,
+                    "reminder_threshold": p.reminder_threshold,
                 }
                 for p in s.prescriptions
             ],

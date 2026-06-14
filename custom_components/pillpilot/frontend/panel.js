@@ -109,6 +109,13 @@ const STRINGS = {
     hours_ago: "{n}h ago",
     days_ago: "{n}d ago",
     last_taken: "Last taken",
+    stock_btn: "Stock",
+    stock_label: "Stock",
+    stock_doses_left: "{n} doses left",
+    stock_runs_out: "runs out {date}",
+    stock_low: "Low",
+    stock_expires: "expires {date}",
+    stock_expired: "Expired",
     sched_daily: "Daily",
     sched_weekly: "Weekly ({days})",
     sched_monthly: "Monthly",
@@ -187,6 +194,13 @@ const STRINGS = {
     hours_ago: "{n} tim sedan",
     days_ago: "{n} d sedan",
     last_taken: "Senast tagen",
+    stock_btn: "Lager",
+    stock_label: "Lager",
+    stock_doses_left: "{n} doser kvar",
+    stock_runs_out: "slut {date}",
+    stock_low: "Lågt",
+    stock_expires: "går ut {date}",
+    stock_expired: "Utgånget",
     sched_daily: "Dagligen",
     sched_weekly: "Veckovis ({days})",
     sched_monthly: "Månadsvis",
@@ -1252,7 +1266,50 @@ const STYLES = `
   .med-footer {
     display: flex;
     justify-content: flex-end;
+    gap: 8px;
     margin-top: 10px;
+  }
+  .med-stock {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--secondary-text-color, #727272);
+    margin-top: 6px;
+  }
+  .med-stock-label { font-weight: 600; }
+  .stock-badge {
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    line-height: 1.5;
+  }
+  .stock-badge-low {
+    background: var(--error-color, #db4437);
+    color: #fff;
+  }
+  .stock-badge-expiry {
+    background: var(--secondary-background-color, #f5f5f5);
+    color: var(--secondary-text-color, #727272);
+  }
+  .stock-badge-expired {
+    background: var(--warning-color, #ffa600);
+    color: #fff;
+  }
+  .stock-current {
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+  .stock-inline-btn {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+  }
+  .checkbox-field {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
   }
   .med-edit-btn {
     font-size: 12px;
@@ -1391,6 +1448,10 @@ class PillPilotPanel extends HTMLElement {
       this._editFormErrorDetail = null;
       this._editFormSaving = false;
       this._personSubModal = null;
+      // v0.3.0-beta2: per-prescription stock dialog, opened from a
+      // card's Stock button. Independent of the add/edit modals — it
+      // acts on an already-saved prescription via the stock services.
+      this._stockModal = null;
       // Cached medicines catalog from pillpilot/get_medicines_db. Used
       // by the Add/Edit modal's drug-name autocomplete and post-pick
       // auto-fill. Fetched lazily on the first hass set; null while in
@@ -2009,6 +2070,20 @@ class PillPilotPanel extends HTMLElement {
         const td = (p.today_doses || [])
           .map((d) => `${d.time}:${d.status}:${d.action_at || ""}:${d.snoozed_until || ""}`)
           .join(",");
+        // Stock fields so set/refill/adjust/configure (which change stock
+        // without touching dose state) bump the signature and re-render.
+        const stk = [
+          p.track_stock ? "1" : "0",
+          p.stock != null ? p.stock : "",
+          p.doses_left != null ? p.doses_left : "",
+          p.run_out_date || "",
+          p.low_stock ? "1" : "0",
+          p.expiry_date || "",
+          p.pack_size != null ? p.pack_size : "",
+          p.reminder_enabled ? "1" : "0",
+          p.reminder_mode || "",
+          p.reminder_threshold != null ? p.reminder_threshold : "",
+        ].join(",");
         parts.push([
           m.entity_id,
           p.id || "",
@@ -2022,6 +2097,7 @@ class PillPilotPanel extends HTMLElement {
           p.dose || "",
           a.notes || "",
           td,
+          stk,
         ].join(":"));
       }
     }
@@ -2361,6 +2437,328 @@ class PillPilotPanel extends HTMLElement {
     const monthIdx = parseInt(m[2], 10) - 1;
     if (monthIdx < 0 || monthIdx > 11) return iso;
     return `${months[monthIdx]} ${parseInt(m[3], 10)}, ${m[1]}`;
+  }
+
+  // --- stock (v0.3.0-beta2) ---------------------------------------------
+
+  // Compact readout shown on a card / list row for a tracked
+  // prescription. Empty string when the prescription isn't tracking
+  // stock. Reads the per-prescription stock fields straight off the
+  // sensor attributes.
+  _renderStockReadout(p) {
+    if (!p || !p.track_stock) return "";
+    const unit = p.stock_unit || "units";
+    const segs = [];
+    segs.push(p.stock != null ? `${p.stock} ${escapeHtml(unit)}` : "—");
+    if (p.doses_left != null) {
+      segs.push(escapeHtml(this._tf("stock_doses_left", { n: p.doses_left })));
+    }
+    if (p.run_out_date) {
+      segs.push(
+        escapeHtml(
+          this._tf("stock_runs_out", { date: this._formatEndDate(p.run_out_date) })
+        )
+      );
+    }
+    const lowBadge = p.low_stock
+      ? `<span class="stock-badge stock-badge-low">${escapeHtml(this._t("stock_low"))}</span>`
+      : "";
+    let expiryBadge = "";
+    if (p.expiry_date) {
+      const today = new Date();
+      const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      if (p.expiry_date < todayIso) {
+        expiryBadge = `<span class="stock-badge stock-badge-expired">${escapeHtml(this._t("stock_expired"))}</span>`;
+      } else {
+        expiryBadge = `<span class="stock-badge stock-badge-expiry">${escapeHtml(this._tf("stock_expires", { date: this._formatEndDate(p.expiry_date) }))}</span>`;
+      }
+    }
+    return `
+      <div class="med-stock">
+        <span class="med-stock-label">${escapeHtml(this._t("stock_label"))}:</span>
+        <span class="med-stock-text">${segs.join(" · ")}</span>
+        ${lowBadge}${expiryBadge}
+      </div>
+    `;
+  }
+
+  _openStockModal(medId, prescriptionId) {
+    if (!this._hass) return;
+    const med = this._getMedicines().find(
+      (m) => m.attributes && m.attributes.medicine_id === medId
+    );
+    if (!med) return;
+    const p = (med.attributes.prescriptions || []).find(
+      (x) => x.id === prescriptionId
+    );
+    if (!p) return;
+    this._stockModal = {
+      medId,
+      prescriptionId,
+      name: med.attributes.medicine_name || med.entity_id,
+      draft: {
+        track: !!p.track_stock,
+        packSize: p.pack_size != null ? String(p.pack_size) : "",
+        reminderEnabled: !!p.reminder_enabled,
+        reminderMode: p.reminder_mode || "doses",
+        reminderThreshold:
+          p.reminder_threshold != null ? String(p.reminder_threshold) : "",
+        expiry: p.expiry_date || "",
+        amount: p.stock != null ? String(p.stock) : "",
+        packs: "1",
+        adjust: "1",
+      },
+    };
+    this._render();
+  }
+
+  _closeStockModal() {
+    if (!this._stockModal) return;
+    this._stockModal = null;
+    this._render();
+  }
+
+  // The prescription's current stock attrs, re-read live so the dialog
+  // reflects the latest after a service call lands.
+  _stockLivePrescription() {
+    const sm = this._stockModal;
+    if (!sm || !this._hass) return null;
+    const med = this._getMedicines().find(
+      (m) => m.attributes && m.attributes.medicine_id === sm.medId
+    );
+    if (!med) return null;
+    return (
+      (med.attributes.prescriptions || []).find(
+        (x) => x.id === sm.prescriptionId
+      ) || null
+    );
+  }
+
+  _stockApplyConfig() {
+    const sm = this._stockModal;
+    if (!sm || !this._hass) return;
+    const d = sm.draft;
+    const data = {
+      medicine_id: sm.medId,
+      prescription_id: sm.prescriptionId,
+      track_stock: !!d.track,
+      reminder_enabled: !!d.reminderEnabled,
+      reminder_mode: d.reminderMode || "doses",
+      // Always send expiry so clearing the field clears it server-side.
+      expiry: d.expiry || "",
+    };
+    const ps = parseFloat(d.packSize);
+    if (!isNaN(ps)) data.pack_size = ps;
+    const rt = parseFloat(d.reminderThreshold);
+    if (!isNaN(rt)) data.reminder_threshold = rt;
+    this._hass.callService("pillpilot", "configure_stock", data);
+  }
+
+  _stockSet() {
+    const sm = this._stockModal;
+    if (!sm || !this._hass) return;
+    const amt = parseFloat(sm.draft.amount);
+    if (isNaN(amt)) return;
+    const data = {
+      medicine_id: sm.medId,
+      prescription_id: sm.prescriptionId,
+      amount: amt,
+    };
+    if (sm.draft.expiry) data.expiry = sm.draft.expiry;
+    this._hass.callService("pillpilot", "set_stock", data);
+  }
+
+  _stockRefill() {
+    const sm = this._stockModal;
+    if (!sm || !this._hass) return;
+    const packs = parseFloat(sm.draft.packs);
+    const data = {
+      medicine_id: sm.medId,
+      prescription_id: sm.prescriptionId,
+      packs: isNaN(packs) ? 1 : packs,
+    };
+    if (sm.draft.expiry) data.expiry = sm.draft.expiry;
+    this._hass.callService("pillpilot", "refill", data);
+  }
+
+  _stockAdjust(sign) {
+    const sm = this._stockModal;
+    if (!sm || !this._hass) return;
+    const step = parseFloat(sm.draft.adjust);
+    const delta = (isNaN(step) ? 1 : step) * sign;
+    this._hass.callService("pillpilot", "adjust_stock", {
+      medicine_id: sm.medId,
+      prescription_id: sm.prescriptionId,
+      delta,
+    });
+  }
+
+  _renderStockModal() {
+    const sm = this._stockModal;
+    if (!sm) return "";
+    const d = sm.draft;
+    const live = this._stockLivePrescription() || {};
+    const unit = live.stock_unit || "units";
+    const currentParts = [];
+    currentParts.push(
+      live.stock != null ? `${live.stock} ${escapeHtml(unit)}` : "—"
+    );
+    if (live.doses_left != null) {
+      currentParts.push(
+        escapeHtml(this._tf("stock_doses_left", { n: live.doses_left }))
+      );
+    }
+    if (live.run_out_date) {
+      currentParts.push(
+        escapeHtml(
+          this._tf("stock_runs_out", {
+            date: this._formatEndDate(live.run_out_date),
+          })
+        )
+      );
+    }
+    const modes = [
+      ["doses", "Doses left"],
+      ["units", "Units left"],
+      ["days", "Days until run-out"],
+    ];
+    const modeOptions = modes
+      .map(
+        ([v, label]) =>
+          `<option value="${v}" ${d.reminderMode === v ? "selected" : ""}>${label}</option>`
+      )
+      .join("");
+    return `
+      <div class="modal-overlay sub-modal-overlay" data-action="close-stock-modal">
+        <div class="modal-card sub-modal-card" data-action="modal-stop">
+          <header class="modal-header">
+            <h2>Stock — ${escapeHtml(sm.name)}</h2>
+            <button class="modal-close-btn" data-action="close-stock-modal" aria-label="Close">×</button>
+          </header>
+          <div class="modal-body">
+
+            <div class="form-section">
+              <h3 class="form-section-title">Current stock</h3>
+              <div class="med-meta stock-current">${currentParts.join(" · ")}</div>
+              <div class="form-row">
+                <label class="form-field">
+                  <span class="form-label">Set count (${escapeHtml(unit)})</span>
+                  <input type="number" min="0" step="0.1" class="form-input" data-stock-field="amount" value="${escapeHtml(d.amount)}">
+                </label>
+                <div class="form-field stock-inline-btn">
+                  <button class="modal-btn modal-btn-secondary" data-action="stock-set">Set</button>
+                </div>
+              </div>
+              <div class="form-row">
+                <label class="form-field">
+                  <span class="form-label">Refill (packs)</span>
+                  <input type="number" min="0" step="1" class="form-input" data-stock-field="packs" value="${escapeHtml(d.packs)}">
+                </label>
+                <div class="form-field stock-inline-btn">
+                  <button class="modal-btn modal-btn-secondary" data-action="stock-refill">Refill</button>
+                </div>
+              </div>
+              <div class="form-row">
+                <label class="form-field">
+                  <span class="form-label">Adjust by</span>
+                  <input type="number" min="0" step="1" class="form-input" data-stock-field="adjust" value="${escapeHtml(d.adjust)}">
+                </label>
+                <div class="form-field stock-inline-btn">
+                  <button class="modal-btn modal-btn-secondary" data-action="stock-adjust-dec">−</button>
+                  <button class="modal-btn modal-btn-secondary" data-action="stock-adjust-inc">+</button>
+                </div>
+              </div>
+              <span class="form-hint">Set replaces the count; Refill adds pack size × packs; Adjust nudges up or down.</span>
+            </div>
+
+            <div class="form-section">
+              <h3 class="form-section-title">Settings</h3>
+              <label class="form-field checkbox-field">
+                <input type="checkbox" data-stock-field="track" ${d.track ? "checked" : ""}>
+                <span class="form-label">Track stock for this prescription</span>
+              </label>
+              <label class="form-field">
+                <span class="form-label">Pack size (units per pack)</span>
+                <input type="number" min="0" step="1" class="form-input" data-stock-field="packSize" value="${escapeHtml(d.packSize)}" placeholder="e.g. 30">
+              </label>
+              <label class="form-field checkbox-field">
+                <input type="checkbox" data-stock-field="reminderEnabled" ${d.reminderEnabled ? "checked" : ""}>
+                <span class="form-label">Refill reminder</span>
+              </label>
+              <div class="form-row">
+                <label class="form-field">
+                  <span class="form-label">Reminder when</span>
+                  <select class="form-input" data-stock-field="reminderMode">${modeOptions}</select>
+                </label>
+                <label class="form-field">
+                  <span class="form-label">At or below</span>
+                  <input type="number" min="0" step="1" class="form-input" data-stock-field="reminderThreshold" value="${escapeHtml(d.reminderThreshold)}" placeholder="e.g. 5">
+                </label>
+              </div>
+              <label class="form-field">
+                <span class="form-label">Expiry date</span>
+                <input type="date" class="form-input" data-stock-field="expiry" value="${escapeHtml(d.expiry)}">
+                <span class="form-hint">Optional. Leave empty to clear.</span>
+              </label>
+            </div>
+
+          </div>
+          <footer class="modal-footer">
+            <button class="modal-btn modal-btn-secondary" data-action="close-stock-modal">${escapeHtml(this._t("cancel"))}</button>
+            <button class="modal-btn modal-btn-primary" data-action="stock-apply-config">Save settings</button>
+          </footer>
+        </div>
+      </div>
+    `;
+  }
+
+  _wireStockModalListeners() {
+    const root = this.shadowRoot;
+    if (!root) return;
+
+    root.querySelectorAll('[data-action="close-stock-modal"]').forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (
+          e.currentTarget === e.target ||
+          e.currentTarget.classList.contains("modal-close-btn") ||
+          e.currentTarget.classList.contains("modal-btn-secondary")
+        ) {
+          this._closeStockModal();
+        }
+      });
+    });
+    root.querySelectorAll('[data-action="modal-stop"]').forEach((el) => {
+      if (el.dataset._stopWired === "1") return;
+      el.dataset._stopWired = "1";
+      el.addEventListener("click", (e) => e.stopPropagation());
+    });
+
+    const bindClick = (action, fn) => {
+      root.querySelectorAll(`[data-action="${action}"]`).forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.preventDefault();
+          fn();
+        });
+      });
+    };
+    bindClick("stock-apply-config", () => this._stockApplyConfig());
+    bindClick("stock-set", () => this._stockSet());
+    bindClick("stock-refill", () => this._stockRefill());
+    bindClick("stock-adjust-inc", () => this._stockAdjust(1));
+    bindClick("stock-adjust-dec", () => this._stockAdjust(-1));
+
+    root.querySelectorAll("[data-stock-field]").forEach((el) => {
+      const field = el.dataset.stockField;
+      const eventName =
+        el.tagName === "SELECT" || el.type === "checkbox" ? "change" : "input";
+      el.addEventListener(eventName, (e) => {
+        if (!this._stockModal) return;
+        const t = e.currentTarget;
+        this._stockModal.draft[field] =
+          t.type === "checkbox" ? t.checked : t.value;
+      });
+    });
   }
 
   // --- actions -----------------------------------------------------------
@@ -3113,14 +3511,18 @@ class PillPilotPanel extends HTMLElement {
     const subModalHtml = this._personSubModal
       ? this._renderPrescriptionSubModal()
       : "";
+    const stockModalHtml = this._stockModal ? this._renderStockModal() : "";
     this.shadowRoot.innerHTML =
-      `<style>${STYLES}</style>${html}${mainModalHtml}${subModalHtml}`;
+      `<style>${STYLES}</style>${html}${mainModalHtml}${subModalHtml}${stockModalHtml}`;
     this._wireListeners();
     if (this._editingMedicineId || this._addingMedicine) {
       this._wireMainModalListeners();
     }
     if (this._personSubModal) {
       this._wireSubModalListeners();
+    }
+    if (this._stockModal) {
+      this._wireStockModalListeners();
     }
     if (this._debug) console.log("[PillPilot] rendered");
   }
@@ -4594,9 +4996,11 @@ class PillPilotPanel extends HTMLElement {
         ${prescription.dose ? `<div class="med-dose">${escapeHtml(prescription.dose)}</div>` : ""}
         <div class="med-meta">${escapeHtml(sched)}</div>
         <div class="med-meta">${escapeHtml(this._t("last_taken"))}: ${escapeHtml(lastTaken)}</div>
+        ${this._renderStockReadout(prescription)}
         ${note ? `<div class="med-note">${escapeHtml(note)}</div>` : ""}
         <div class="med-footer">
           <button class="med-edit-btn" data-action="edit" data-medicine-id="${medId}">${escapeHtml(this._t("edit"))}</button>
+          <button class="med-edit-btn" data-action="open-stock" data-medicine-id="${medId}" data-prescription-id="${escapeHtml(prescription.id || "")}">${escapeHtml(this._t("stock_btn"))}</button>
         </div>
       </div>
     `;
@@ -4623,6 +5027,7 @@ class PillPilotPanel extends HTMLElement {
         <div class="med-list-meta">${escapeHtml(prescription.dose || "—")}</div>
         <div class="med-list-meta">${escapeHtml(sched)}</div>
         <div class="med-list-meta">${escapeHtml(lastTaken)}</div>
+        <button class="med-edit-btn" data-action="open-stock" data-medicine-id="${medId}" data-prescription-id="${escapeHtml(prescription.id || "")}">${escapeHtml(this._t("stock_btn"))}</button>
         <button class="med-edit-btn" data-action="edit" data-medicine-id="${medId}">${escapeHtml(this._t("edit"))}</button>
       </div>
     `;
@@ -4742,6 +5147,15 @@ class PillPilotPanel extends HTMLElement {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         this._editMedicine(e.currentTarget.dataset.medicineId);
+      });
+    });
+    root.querySelectorAll('[data-action="open-stock"]').forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        this._openStockModal(
+          e.currentTarget.dataset.medicineId,
+          e.currentTarget.dataset.prescriptionId
+        );
       });
     });
     // Cards / List view toggle in each person-section header.

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0-beta2] — 2026-06-14
+
+Beta release. Stock tracking in the panel.
+
+- Each medicine card and list row gets a Stock button that opens a per-prescription stock dialog, plus a compact readout for tracked prescriptions: current count, doses left, run-out date, and low-stock and expiry badges.
+- The dialog sets the current count, refills by packs, adjusts up or down, toggles tracking, and edits pack size, refill reminder (units / doses / days with a threshold), and expiry date.
+- Per-prescription sensor attributes add `reminder_enabled`, `reminder_mode`, and `reminder_threshold` (read-only) so the editor shows the current settings.
+- Card readout strings are translated (English and Swedish).
+
+Stock configuration continues to be stored by the integration; it is now editable from the panel as well as the services.
+
 ## [0.3.0-beta1] — 2026-06-14
 
 Beta release. Stock / inventory tracking, exposed through services and sensor attributes.
