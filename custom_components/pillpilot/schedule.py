@@ -473,10 +473,11 @@ class Schedule:
         #      for interval schedules so the every-N-day cycle phase is
         #      stable across HA restarts and reproducible from form input.
         #   2. cycle_anchor — for SCHEDULE_TYPE_CYCLE.
-        #   3. ends_on — fallback for back-compat with legacy data.
-        #   4. date.today() — last-resort default. Only happens for fresh
-        #      pre-v0.2.4 interval prescriptions before migration runs.
-        anchor = starts_on or cycle_anchor or ends_on or date.today()
+        #   3. date.today() — default for daily/weekly/monthly.
+        # ends_on is deliberately excluded: it's the UNTIL cap, not the
+        # start. Anchoring on it puts DTSTART on the same day as UNTIL,
+        # so the rule yields a single occurrence on the end date.
+        anchor = starts_on or cycle_anchor or date.today()
 
         return cls(
             rrule_str=med.get(CONF_MED_RRULE) or "FREQ=DAILY",

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.21] — 2026-06-14
+
+**Fixes**
+
+- A prescription with an end date and no start date scheduled only a single dose, falling on the end date itself. It now schedules doses across the full range up to and including the end date. Daily, weekly, monthly, and interval schedules are all corrected.
+
 ## [0.2.20] — 2026-05-30
 
 - Completed the panel translation pass started in v0.2.19. Now covered in English and Swedish: status badges (due now / upcoming / taken / missed / skipped / snoozed), per-dose action buttons (Take / Snooze / Skip / Edit), dose status labels with timestamps (Taken at / Skipped at / Snoozed until), relative times (never / just now / Nm ago), schedule summaries (Daily / Weekly / Monthly / Every N days, weekday abbreviations, from / until suffixes), sort options and list column headers, the per-medicine Visibility section, form validation and error messages, empty-state texts, and the Delete medicine / Undo last action buttons.
