@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0] — 2026-07-03
+
+Stock and inventory tracking.
+
+- Per-prescription stock tracking, off until enabled. Current stock is derived from a ledger of set / refill / adjust events minus the units consumed by taken doses, so undoing a dose or recording several at once keeps the count right.
+- Stock is counted in the prescription's per-dose unit. A refill adds pack size times the number of packs. Injection stock reports both injections left and the pen/pack equivalent.
+- Refill reminder with a threshold measured in units left, doses left, or days until run-out. The run-out date is projected forward from the prescription's schedule.
+- Editable expiry date per prescription.
+- Stock is managed from the panel. Each medicine card and list row has a Stock button that opens a per-prescription dialog to set the current count, refill by packs, adjust up or down, toggle tracking, and edit pack size, refill reminder, and expiry. Tracked prescriptions show a compact readout with low-stock and expiry badges.
+- New services: `configure_stock`, `set_stock`, `adjust_stock`, `refill`.
+- New events: `pillpilot_stock_low`, `pillpilot_stock_expiring`, `pillpilot_stock_expired`, each fired once per crossing and re-armed when the condition clears.
+- New per-prescription sensor attributes: `track_stock`, `stock`, `stock_unit`, `pack_size`, `packs_left`, `doses_left`, `days_left`, `run_out_date`, `expiry_date`, `low_stock`. A medicine-level `low_stock` flag is true when any tracked prescription is below its threshold.
+- Dose records carry the prescription id and the units consumed. Records from earlier versions are matched to their prescription on load. Taken, skipped, and snoozed actions resolve to the exact prescription, including two prescriptions that share one person.
+- List view: the per-row Edit and Stock actions are in a kebab menu, so each row stays aligned to its columns.
+
 ## [0.3.0-beta3] — 2026-06-14
 
 Beta release.
