@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3] — 2026-08-06
+
+Log a past dose.
+
+- New "Log a dose…" item in each list row's menu. Opens a dialog with a date and time picker (defaulting to now, future times rejected) and records the dose as taken at that moment via `mark_taken`. The record binds to the schedule slot closest to the picked time, so a weekly injection logged a few days late lands on the right day.
+- The `mark_taken` service's `when` field now accepts naive datetimes — they're treated as local time. Previously a naive `when` (as Developer Tools sends) could crash the slot resolver.
+
 ## [0.3.2] — 2026-08-06
 
 - Fix a startup crash introduced in 0.3.1: the coordinator referenced a renamed variable when opening its history store, which failed the whole integration setup. Dose history is unaffected — the storage key is unchanged.

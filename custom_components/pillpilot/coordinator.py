@@ -541,6 +541,11 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         the closest-by-time prescription (multi-prescription).
         """
         when = when or dt_util.now()
+        # Callers may pass a naive datetime (Dev Tools, the panel's
+        # log-a-dose dialog). Treat it as local time — comparing naive
+        # against the schedule's aware datetimes raises otherwise.
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
         if self._record_taken(medicine_id, when, scheduled_for, person_id):
             await self._async_save()
             # Immediate (not async_request_refresh) so the panel's pending

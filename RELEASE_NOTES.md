@@ -1,13 +1,12 @@
-# v0.3.2
+# v0.3.3
 
-Fixes the Home Assistant 2026.8 breakage. Use this instead of 0.3.1, which crashed on startup.
+Log a past dose.
 
 ## Changes
 
-- Fix a startup crash in 0.3.1: the coordinator referenced a renamed variable when opening its history store, failing the integration setup. Dose history is unaffected — the storage key is unchanged.
-- From 0.3.1: each medicine gets its own HA device instead of sharing a per-person / "Household Medicines" device. HA 2026.8 restricts a device to a single config subentry; the shared device made every medicine after the first fail to register its sensor, so the panel showed no medicines. Entity ids are unchanged; stale empty devices are removed automatically.
-- From 0.3.1: the coordinator passes its config entry explicitly, as required by HA 2026.8.
+- New "Log a dose…" item in each list row's menu. Opens a dialog with a date and time picker (defaulting to now, future times rejected) and records the dose as taken at that moment. The record binds to the schedule slot closest to the picked time, so a weekly injection logged a few days late lands on the right day, not today.
+- The `mark_taken` service's `when` field now accepts naive datetimes, treated as local time. Usable from Developer Tools: `pillpilot.mark_taken` with `medicine_id` and `when: "2026-08-02 17:00:00"`.
 
 ## Upgrading
 
-Update through HACS (or replace the `pillpilot` directory in `custom_components/` with the contents of this zip) and restart Home Assistant.
+Update through HACS (or replace the `pillpilot` directory in `custom_components/` with the contents of this zip) and restart Home Assistant. Hard-refresh the browser to pick up the new panel.

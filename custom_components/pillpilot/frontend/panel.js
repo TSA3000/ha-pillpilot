@@ -110,6 +110,14 @@ const STRINGS = {
     days_ago: "{n}d ago",
     last_taken: "Last taken",
     stock_btn: "Stock",
+    log_dose_btn: "Log a dose…",
+    log_dose_title: "Log a dose",
+    log_dose_hint: "Record a dose that was taken earlier but never marked. It's matched to the schedule slot closest to the time you pick.",
+    log_dose_date: "Date",
+    log_dose_time: "Time",
+    log_dose_save: "Log dose",
+    log_dose_incomplete: "Pick a date and time.",
+    log_dose_future: "The time can't be in the future.",
     stock_label: "Stock",
     stock_doses_left: "{n} doses left",
     stock_runs_out: "runs out {date}",
@@ -195,6 +203,14 @@ const STRINGS = {
     days_ago: "{n} d sedan",
     last_taken: "Senast tagen",
     stock_btn: "Lager",
+    log_dose_btn: "Logga en dos…",
+    log_dose_title: "Logga en dos",
+    log_dose_hint: "Registrera en dos som togs tidigare men aldrig markerades. Den kopplas till schemat närmast den tid du väljer.",
+    log_dose_date: "Datum",
+    log_dose_time: "Tid",
+    log_dose_save: "Logga dos",
+    log_dose_incomplete: "Välj datum och tid.",
+    log_dose_future: "Tiden kan inte vara i framtiden.",
     stock_label: "Lager",
     stock_doses_left: "{n} doser kvar",
     stock_runs_out: "slut {date}",
@@ -1455,6 +1471,10 @@ class PillPilotPanel extends HTMLElement {
       // card's Stock button. Independent of the add/edit modals — it
       // acts on an already-saved prescription via the stock services.
       this._stockModal = null;
+      // v0.3.3: log-a-past-dose dialog, opened from a list row's
+      // kebab. Records a taken dose at a user-picked date/time via
+      // pillpilot.mark_taken with `when`.
+      this._logDoseModal = null;
       // Cached medicines catalog from pillpilot/get_medicines_db. Used
       // by the Add/Edit modal's drug-name autocomplete and post-pick
       // auto-fill. Fetched lazily on the first hass set; null while in
@@ -2521,6 +2541,69 @@ class PillPilotPanel extends HTMLElement {
     this._render();
   }
 
+  // v0.3.3: log a dose that was taken earlier but never marked —
+  // e.g. a weekly injection recorded a few days late. Uses
+  // pillpilot.mark_taken with `when`; the backend binds the record
+  // to the schedule slot closest to that time, so the dose lands on
+  // the right day's slot, not today's.
+  _openLogDoseModal(medId, prescriptionId) {
+    if (!this._hass) return;
+    const med = this._getMedicines().find(
+      (m) => m.attributes && m.attributes.medicine_id === medId
+    );
+    if (!med) return;
+    const p = (med.attributes.prescriptions || []).find(
+      (x) => x.id === prescriptionId
+    );
+    if (!p) return;
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    this._logDoseModal = {
+      medId,
+      personId: p.person_id || null,
+      personName: p.person_name || null,
+      name: med.attributes.medicine_name || med.entity_id,
+      error: null,
+      draft: {
+        date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+        time: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
+      },
+    };
+    this._render();
+  }
+
+  _closeLogDoseModal() {
+    if (!this._logDoseModal) return;
+    this._logDoseModal = null;
+    this._render();
+  }
+
+  _logDoseSave() {
+    const lm = this._logDoseModal;
+    if (!lm || !this._hass) return;
+    const { date, time } = lm.draft;
+    if (!date || !time) {
+      lm.error = "log_dose_incomplete";
+      this._render();
+      return;
+    }
+    const when = new Date(`${date}T${time}:00`);
+    if (isNaN(when.getTime())) {
+      lm.error = "log_dose_incomplete";
+      this._render();
+      return;
+    }
+    if (when.getTime() > Date.now()) {
+      lm.error = "log_dose_future";
+      this._render();
+      return;
+    }
+    const data = { medicine_id: lm.medId, when: `${date} ${time}:00` };
+    if (lm.personId) data.person_id = lm.personId;
+    this._hass.callService("pillpilot", "mark_taken", data);
+    this._closeLogDoseModal();
+  }
+
   // The prescription's current stock attrs, re-read live so the dialog
   // reflects the latest after a service call lands.
   _stockLivePrescription() {
@@ -2594,6 +2677,52 @@ class PillPilotPanel extends HTMLElement {
       prescription_id: sm.prescriptionId,
       delta,
     });
+  }
+
+  _renderLogDoseModal() {
+    const lm = this._logDoseModal;
+    if (!lm) return "";
+    const d = lm.draft;
+    const pad = (n) => String(n).padStart(2, "0");
+    const now = new Date();
+    const maxDate = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const personLine = lm.personName
+      ? `<div class="med-meta">${escapeHtml(lm.personName)}</div>`
+      : "";
+    const errorLine = lm.error
+      ? `<div class="field-error">${escapeHtml(this._t(lm.error))}</div>`
+      : "";
+    return `
+      <div class="modal-overlay sub-modal-overlay" data-action="close-log-dose-modal">
+        <div class="modal-card sub-modal-card" data-action="modal-stop">
+          <header class="modal-header">
+            <h2>${escapeHtml(this._t("log_dose_title"))} — ${escapeHtml(lm.name)}</h2>
+            <button class="modal-close-btn" data-action="close-log-dose-modal" aria-label="Close">×</button>
+          </header>
+          <div class="modal-body">
+            <div class="form-section">
+              ${personLine}
+              <span class="form-hint">${escapeHtml(this._t("log_dose_hint"))}</span>
+              <div class="form-row">
+                <label class="form-field">
+                  <span class="form-label">${escapeHtml(this._t("log_dose_date"))}</span>
+                  <input type="date" class="form-input" data-logdose-field="date" max="${maxDate}" value="${escapeHtml(d.date)}">
+                </label>
+                <label class="form-field">
+                  <span class="form-label">${escapeHtml(this._t("log_dose_time"))}</span>
+                  <input type="time" class="form-input" data-logdose-field="time" value="${escapeHtml(d.time)}">
+                </label>
+              </div>
+              ${errorLine}
+            </div>
+          </div>
+          <footer class="modal-footer">
+            <button class="modal-btn modal-btn-secondary" data-action="close-log-dose-modal">${escapeHtml(this._t("cancel"))}</button>
+            <button class="modal-btn modal-btn-primary" data-action="log-dose-save">${escapeHtml(this._t("log_dose_save"))}</button>
+          </footer>
+        </div>
+      </div>
+    `;
   }
 
   _renderStockModal() {
@@ -2760,6 +2889,36 @@ class PillPilotPanel extends HTMLElement {
         const t = e.currentTarget;
         this._stockModal.draft[field] =
           t.type === "checkbox" ? t.checked : t.value;
+      });
+    });
+  }
+
+  _wireLogDoseModalListeners() {
+    const root = this.shadowRoot;
+    if (!root) return;
+    root.querySelectorAll('[data-action="close-log-dose-modal"]').forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.preventDefault();
+        if (
+          e.currentTarget === e.target ||
+          e.currentTarget.classList.contains("modal-close-btn") ||
+          e.currentTarget.classList.contains("modal-btn-secondary")
+        ) {
+          this._closeLogDoseModal();
+        }
+      });
+    });
+    root.querySelectorAll('[data-action="log-dose-save"]').forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        this._logDoseSave();
+      });
+    });
+    root.querySelectorAll("[data-logdose-field]").forEach((el) => {
+      el.addEventListener("input", (e) => {
+        if (!this._logDoseModal) return;
+        const t = e.currentTarget;
+        this._logDoseModal.draft[t.dataset.logdoseField] = t.value;
       });
     });
   }
@@ -3515,8 +3674,9 @@ class PillPilotPanel extends HTMLElement {
       ? this._renderPrescriptionSubModal()
       : "";
     const stockModalHtml = this._stockModal ? this._renderStockModal() : "";
+    const logDoseModalHtml = this._logDoseModal ? this._renderLogDoseModal() : "";
     this.shadowRoot.innerHTML =
-      `<style>${STYLES}</style>${html}${mainModalHtml}${subModalHtml}${stockModalHtml}`;
+      `<style>${STYLES}</style>${html}${mainModalHtml}${subModalHtml}${stockModalHtml}${logDoseModalHtml}`;
     this._wireListeners();
     if (this._editingMedicineId || this._addingMedicine) {
       this._wireMainModalListeners();
@@ -3526,6 +3686,7 @@ class PillPilotPanel extends HTMLElement {
     }
     if (this._stockModal) {
       this._wireStockModalListeners();
+    this._wireLogDoseModalListeners();
     }
     if (this._debug) console.log("[PillPilot] rendered");
   }
@@ -5037,6 +5198,7 @@ class PillPilotPanel extends HTMLElement {
           <div class="kebab-menu" data-kebab-for="${rowKey}">
             <button data-action="edit" data-medicine-id="${medId}">${escapeHtml(this._t("edit"))}</button>
             <button data-action="open-stock" data-medicine-id="${medId}" data-prescription-id="${prescId}">${escapeHtml(this._t("stock_btn"))}</button>
+            <button data-action="log-dose" data-medicine-id="${medId}" data-prescription-id="${prescId}">${escapeHtml(this._t("log_dose_btn"))}</button>
           </div>
         </div>
       </div>
@@ -5157,6 +5319,13 @@ class PillPilotPanel extends HTMLElement {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         this._editMedicine(e.currentTarget.dataset.medicineId);
+      });
+    });
+    root.querySelectorAll('[data-action="log-dose"]').forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        const t = e.currentTarget;
+        this._openLogDoseModal(t.dataset.medicineId, t.dataset.prescriptionId);
       });
     });
     root.querySelectorAll('[data-action="open-stock"]').forEach((btn) => {
