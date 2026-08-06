@@ -3,11 +3,19 @@ name: Release
 # Fires when you push a tag that looks like a SemVer version (e.g. v0.1.0).
 # Builds a zip of the integration, creates a GitHub Release using the tag,
 # and uses RELEASE_NOTES.md as the release body.
+#
+# workflow_dispatch is the escape hatch for dropped tag-push events (e.g.
+# the Aug 2026 Actions outage throttled webhooks and swallowed tag pushes):
+# dispatch the workflow ON THE TAG via the ref picker and the run is
+# identical to a tag-push trigger — every step keys off GITHUB_REF_NAME.
+# Dispatched on a branch instead of a tag, the verify step fails on
+# purpose (branch name won't match the manifest version).
 
 on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
 
 permissions:
   contents: write   # needed to create releases
@@ -18,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Verify manifest version matches the tag
         run: |

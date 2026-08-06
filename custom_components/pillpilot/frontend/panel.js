@@ -3686,7 +3686,9 @@ class PillPilotPanel extends HTMLElement {
     }
     if (this._stockModal) {
       this._wireStockModalListeners();
-    this._wireLogDoseModalListeners();
+    }
+    if (this._logDoseModal) {
+      this._wireLogDoseModalListeners();
     }
     if (this._debug) console.log("[PillPilot] rendered");
   }

@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.4] — 2026-08-07
+
+- Fix the Log a dose dialog's buttons doing nothing: its event listeners were only attached while the Stock dialog was open. Cancel, close, and Log dose now work.
+
 ## [0.3.3] — 2026-08-06
 
 Log a past dose.
