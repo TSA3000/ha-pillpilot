@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.5] — 2026-08-07
+
+- Fix the Log a dose dialog's date and time pickers not opening on click. The native popups are now summoned explicitly; typing into the fields keeps working where popups aren't available.
+
 ## [0.3.4] — 2026-08-07
 
 - Fix the Log a dose dialog's buttons doing nothing: its event listeners were only attached while the Stock dialog was open. Cancel, close, and Log dose now work.

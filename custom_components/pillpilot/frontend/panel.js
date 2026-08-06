@@ -2920,6 +2920,21 @@ class PillPilotPanel extends HTMLElement {
         const t = e.currentTarget;
         this._logDoseModal.draft[t.dataset.logdoseField] = t.value;
       });
+      // Native date/time popups don't open on indicator clicks inside
+      // the panel's shadow DOM — summon them explicitly. showPicker
+      // needs a user gesture (this click is one) and can throw in
+      // contexts that forbid it; typing into the field still works
+      // as the fallback, so failures are swallowed.
+      el.addEventListener("click", (e) => {
+        const t = e.currentTarget;
+        if (typeof t.showPicker === "function") {
+          try {
+            t.showPicker();
+          } catch (err) {
+            // NotAllowedError etc. — keyboard entry remains available.
+          }
+        }
+      });
     });
   }
 
