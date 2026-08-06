@@ -83,10 +83,10 @@ async def async_setup_entry(
 def _cleanup_empty_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Remove devices belonging to this entry that have no entities left.
 
-    PillPilot creates one device per ``person.*`` plus a shared
-    "Household Medicines" device. When you delete the last medicine
-    assigned to Alice, her device becomes empty — we want it gone, not
-    lingering as an orphan in the UI.
+    v0.3.1: one device per medicine. Deleting a medicine removes its
+    entity via the subentry link; this sweep removes the now-empty
+    device. It also clears out stale per-person / "Household
+    Medicines" devices left behind from pre-0.3.1 installs.
     """
     dev_reg = dr.async_get(hass)
     ent_reg = er.async_get(hass)
@@ -99,7 +99,7 @@ def _cleanup_empty_devices(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 class MedicineSensor(CoordinatorEntity[MedicineCoordinator], SensorEntity):
-    """One entity per medicine. Grouped under a per-person 'device' in HA."""
+    """One entity per medicine, on its own per-medicine device."""
 
     _attr_has_entity_name = True
 
@@ -125,27 +125,23 @@ class MedicineSensor(CoordinatorEntity[MedicineCoordinator], SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Group all of a person's medicines under one HA device.
+        """One device per medicine, keyed by the medicine's id.
 
-        Medicines without an assigned person fall under a shared
-        "Household Medicines" device.
+        Pre-0.3.1 all of a person's medicines shared one device.
+        HA 2026.8 restricts a device to a single config subentry, and
+        each medicine IS a subentry here — a shared device made every
+        medicine after the first fail to register its sensor. The
+        person context lives on in the device name instead.
         """
         s = self._state
-        person_id = s.person_id if s else None
-        if person_id:
-            owner = s.person_name or person_id
-            return DeviceInfo(
-                identifiers={(DOMAIN, f"person:{person_id}")},
-                name=f"{owner}'s Medicines",
-                manufacturer="PillPilot",
-                model="Per-person medicine schedule",
-                entry_type=DeviceEntryType.SERVICE,
-            )
+        med_name = s.name if s else self._medicine_id
+        person = s.person_name if s else None
+        device_name = f"{med_name} ({person})" if person else med_name
         return DeviceInfo(
-            identifiers={(DOMAIN, "household")},
-            name="Household Medicines",
+            identifiers={(DOMAIN, self._medicine_id)},
+            name=device_name,
             manufacturer="PillPilot",
-            model="Shared medicine schedule",
+            model="Medicine schedule",
             entry_type=DeviceEntryType.SERVICE,
         )
 

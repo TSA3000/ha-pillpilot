@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -342,17 +343,20 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
     def __init__(
         self,
         hass: HomeAssistant,
-        entry_id: str,
+        entry: ConfigEntry,
         medicines: list[dict[str, Any]],
         sources: list[MedicineSource],
     ) -> None:
+        # config_entry is required explicitly by HA 2026.8+ — implicit
+        # detection is removed for coordinators.
         super().__init__(
             hass,
             _LOGGER,
-            name=f"{DOMAIN}_{entry_id}",
+            config_entry=entry,
+            name=f"{DOMAIN}_{entry.entry_id}",
             update_interval=DEFAULT_SCAN_INTERVAL,
         )
-        self._entry_id = entry_id
+        self._entry_id = entry.entry_id
         self._medicines_cfg = medicines
         self._sources = sources
         self._store: Store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}.{entry_id}")

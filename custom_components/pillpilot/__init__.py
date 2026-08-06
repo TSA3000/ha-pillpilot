@@ -448,7 +448,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = MedicineCoordinator(
         hass=hass,
-        entry_id=entry.entry_id,
+        entry=entry,
         medicines=medicines,
         sources=sources,
     )
