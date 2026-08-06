@@ -359,7 +359,7 @@ class MedicineCoordinator(DataUpdateCoordinator[dict[str, MedicineState]]):
         self._entry_id = entry.entry_id
         self._medicines_cfg = medicines
         self._sources = sources
-        self._store: Store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}.{entry_id}")
+        self._store: Store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}.{self._entry_id}")
         self._history: dict[str, list[DoseRecord]] = {}
         # v0.3.0 stock state, persisted in the same Store. Both keyed
         # [medicine_id][prescription_id]. Config holds the per-prescription

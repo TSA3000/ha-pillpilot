@@ -1,11 +1,12 @@
-# v0.3.1
+# v0.3.2
 
-Fix for Home Assistant 2026.8. If your medicines disappeared from the panel after updating HA, this release restores them.
+Fixes the Home Assistant 2026.8 breakage. Use this instead of 0.3.1, which crashed on startup.
 
 ## Changes
 
-- Each medicine now gets its own HA device instead of sharing a per-person / "Household Medicines" device. HA 2026.8 restricts a device to a single config subentry; with the shared device, every medicine after the first failed to register its sensor and the panel showed no medicines. Entity ids are unchanged, so automations and blueprints keep working; the old empty devices are removed automatically on the first update after restart.
-- The coordinator passes its config entry explicitly, as required by HA 2026.8.
+- Fix a startup crash in 0.3.1: the coordinator referenced a renamed variable when opening its history store, failing the integration setup. Dose history is unaffected — the storage key is unchanged.
+- From 0.3.1: each medicine gets its own HA device instead of sharing a per-person / "Household Medicines" device. HA 2026.8 restricts a device to a single config subentry; the shared device made every medicine after the first fail to register its sensor, so the panel showed no medicines. Entity ids are unchanged; stale empty devices are removed automatically.
+- From 0.3.1: the coordinator passes its config entry explicitly, as required by HA 2026.8.
 
 ## Upgrading
 

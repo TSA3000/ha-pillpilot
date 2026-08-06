@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.3.2] — 2026-08-06
+
+- Fix a startup crash introduced in 0.3.1: the coordinator referenced a renamed variable when opening its history store, which failed the whole integration setup. Dose history is unaffected — the storage key is unchanged.
+
 ## [0.3.1] — 2026-08-06
 
 Fix for Home Assistant 2026.8.
